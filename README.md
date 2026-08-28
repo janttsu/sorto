@@ -4,6 +4,8 @@
 
 It never deletes, never overwrites, and never rewrites file contents.
 
+This is a **100% AI project**: the code, tests, TUI, and docs were written by AI (Grok Build / Grok 4.6), not by hand.
+
 ## Install
 
 Python 3.11+ (developed against 3.11–3.14).
