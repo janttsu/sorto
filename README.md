@@ -8,37 +8,49 @@ It never deletes, never overwrites, and never rewrites file contents.
 
 Python 3.11+ (developed against 3.11–3.14).
 
-Do **not** run `python3 -m pip install` against the system interpreter on Arch/Fedora and similar — pip will refuse with `externally-managed-environment` (PEP 668). Use a venv, uv, or pipx.
+Use a **virtual environment**. On Arch (and Fedora, Debian 12+, …) `python3 -m pip install …` against the system interpreter fails with `externally-managed-environment` (PEP 668). Do not pass `--break-system-packages`; install into a venv / virtualenv instead.
 
-**venv (recommended, works on Arch):**
+**venv (stdlib, recommended):**
 
 ```bash
 cd sorto
 python3 -m venv .venv
-.venv/bin/pip install -U pip
-.venv/bin/pip install -e ".[dev]"
-.venv/bin/sorto --help
-# optional: source .venv/bin/activate
+source .venv/bin/activate          # fish: source .venv/bin/activate.fish
+pip install -U pip
+pip install -e ".[dev]"
+sorto --help
+```
+
+Without activating, call `.venv/bin/sorto` and `.venv/bin/pip` directly. `make install` does the same (creates `.venv` if needed).
+
+**virtualenv** (if you prefer the `virtualenv` package, Arch: `pacman -S python-virtualenv`):
+
+```bash
+cd sorto
+virtualenv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
 ```
 
 **uv:**
 
 ```bash
 uv venv
+source .venv/bin/activate
 uv pip install -e ".[dev]"
 ```
 
-**pipx** (app install, not an editable checkout):
+**pipx** (isolated *app* install, not an editable checkout):
 
 ```bash
 pipx install .
 # or: pipx install git+ssh://git@github.com/janttsu/sorto.git
 ```
 
-Optional MIME helper (inside the same venv):
+Optional MIME helper (inside the same virtualenv):
 
 ```bash
-.venv/bin/pip install -e ".[magic]"
+pip install -e ".[magic]"
 # plus system libmagic, e.g. Arch: pacman -S extra/file
 ```
 
