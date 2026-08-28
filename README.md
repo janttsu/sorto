@@ -243,6 +243,7 @@ make install
 make test
 make lint
 make doctor
+make compile   # byte-compile + sdist/wheel in dist/
 ```
 
 Tests use a fake LLM client and a temp directory fixture: no overwrites, no deletes, collision names, dry-run, resume, rediscovery, `..` rejection, invalid JSON, `_organization` exclusion, and ETA sampling.
