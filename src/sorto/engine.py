@@ -9,11 +9,12 @@ from collections import deque
 from pathlib import Path
 from typing import Any
 
-from sorto.apply import ProgressLog, apply_delete_duplicate, apply_move
+from sorto.apply import ProgressLog, apply_delete_duplicate, apply_delete_junk, apply_move
 from sorto.config import SortoConfig
 from sorto.db import Database
 from sorto.eta import EtaTracker
 from sorto.identify import identify_file
+from sorto.junk import JUNK_FOLDER
 from sorto.llm import FakeLLMClient, LLMError, LLMParseError, OpenAICompatClient
 from sorto.models import (
     SUGGESTED_FOLDERS,
@@ -25,7 +26,14 @@ from sorto.models import (
 )
 from sorto.plan import PlanError, existing_folder_hint, plan_destination
 from sorto.scan import discover_batch
-from sorto.util import DELETE_DUPLICATE_MARK, estimate_tokens, git_workdir, posix_rel, utc_now_iso
+from sorto.util import (
+    DELETE_DUPLICATE_MARK,
+    DELETE_JUNK_MARK,
+    estimate_tokens,
+    git_workdir,
+    posix_rel,
+    utc_now_iso,
+)
 
 log = logging.getLogger("sorto")
 
@@ -517,6 +525,8 @@ class Engine:
             self.emit("identify", f"{src_rel} mime={packet.mime or '?'} {dt:.2f}s", file_id)
             if dup_of and self._plan_duplicate_delete(file_id, path, src_rel, dup_of):
                 return
+            if packet.is_junk and self._plan_junk(file_id, path, src_rel, packet):
+                return
             self.analyze_q.put(file_id)
         except OSError as e:
             self._fail(file_id, e)
@@ -560,6 +570,59 @@ class Engine:
         )
         self.move_q.put((file_id, DELETE_DUPLICATE_MARK))
         self.emit("plan", f"delete duplicate {src_rel} (of {original_rel})", file_id)
+        return True
+
+    def _plan_junk(self, file_id: int, path: Path, src_rel: str, packet: AnalysisPacket) -> bool:
+        """Skip the LLM for obvious cache/temp junk. Optionally delete it.
+
+        Returns True when analysis should be skipped.
+        """
+        reason = packet.junk_reason or "cache/temp/junk"
+        repo = git_workdir(path)
+        if self.cfg.delete_junk and repo is None:
+            self.db.update(
+                file_id,
+                status="planned",
+                dest_rel=DELETE_JUNK_MARK,
+                llm_label="junk",
+                llm_reason=reason,
+            )
+            self.move_q.put((file_id, DELETE_JUNK_MARK))
+            self.emit("plan", f"delete junk {src_rel} ({reason})", file_id)
+            return True
+        if self.cfg.delete_junk and repo is not None:
+            self.emit(
+                "junk",
+                f"{src_rel} looks like junk but inside git repo {repo}; will not delete",
+                file_id,
+            )
+        dest_rel = f"{JUNK_FOLDER}/{packet.filename}"
+        try:
+            dest_rel = plan_destination(
+                self.cfg.root,
+                packet,
+                Classification(
+                    label="junk",
+                    confidence=1.0,
+                    dest_rel=dest_rel,
+                    rename=False,
+                    reason=reason,
+                    needs_user=False,
+                ),
+                allow_extension_fix=False,
+            )
+        except PlanError:
+            dest_rel = f"{JUNK_FOLDER}/{packet.filename}"
+        self.db.update(
+            file_id,
+            status="planned",
+            dest_rel=dest_rel,
+            llm_label="junk",
+            llm_reason=reason,
+            llm_confidence=1.0,
+        )
+        self.move_q.put((file_id, dest_rel))
+        self.emit("plan", f"{src_rel} → {dest_rel} (junk: {reason})", file_id)
         return True
 
     def _cache_key(self, packet: AnalysisPacket) -> str:
@@ -849,6 +912,44 @@ class Engine:
                 self.emit(
                     "deleted" if not self.cfg.dry_run else "dry-run",
                     f"{src_rel} duplicate of {original}",
+                    file_id,
+                )
+                self._note_times(file_id, moved=False)
+                self._unmark(file_id)
+                return
+            if dest_rel == DELETE_JUNK_MARK:
+                if not self.cfg.delete_junk:
+                    self.db.update(file_id, status="discovered", dest_rel=None)
+                    self._unmark(file_id)
+                    if self._mark_enqueued(file_id):
+                        self.identify_q.put(file_id)
+                    return
+                try:
+                    apply_delete_junk(
+                        root=self.cfg.root,
+                        src_rel=src_rel,
+                        dry_run=self.cfg.dry_run,
+                    )
+                except (OSError, ValueError) as e:
+                    self._fail(file_id, e)
+                    return
+                action = "dry_run_deleted_junk" if self.cfg.dry_run else "deleted_junk"
+                self.progress.append(
+                    {
+                        "action": action,
+                        "src_rel": src_rel,
+                        "reason": row["llm_reason"],
+                    }
+                )
+                self.db.update(
+                    file_id,
+                    status="planned" if self.cfg.dry_run else "done",
+                    dest_rel=DELETE_JUNK_MARK,
+                    finished_at=utc_now_iso() if not self.cfg.dry_run else None,
+                )
+                self.emit(
+                    "deleted" if not self.cfg.dry_run else "dry-run",
+                    f"{src_rel} junk",
                     file_id,
                 )
                 self._note_times(file_id, moved=False)

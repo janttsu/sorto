@@ -240,3 +240,35 @@ def test_delete_duplicates_never_inside_git_repo(inbox: Path, cfg) -> None:
     # Git-tree duplicate is never unlinked; it may still be moved to candidates.
     assert len(leftovers) >= 2
     assert any(p.read_text(encoding="utf-8") == "same-bytes" for p in leftovers if p != orig[0])
+
+
+def test_junk_goes_to_cache_temp_folder(inbox: Path, cfg) -> None:
+    (inbox / ".DS_Store").write_bytes(b"junk")
+    (inbox / "cache" / "picasso").mkdir(parents=True)
+    (inbox / "cache" / "picasso" / "blob").write_bytes(b"x")
+    (inbox / "invoice.pdf").write_bytes(b"%PDF-1.4\n")
+    engine = make_engine(cfg, dry_run=False)
+    engine.run_until_idle(timeout=30)
+    junk_root = inbox / "_cache_temp_and_junk"
+    assert (junk_root / ".DS_Store").exists() or list(junk_root.rglob(".DS_Store"))
+    assert list(junk_root.rglob("blob"))
+    assert (inbox / "documents" / "invoice.pdf").exists() or (
+        inbox / "invoice.pdf"
+    ).exists() is False
+    assert not (inbox / ".DS_Store").exists()
+
+
+def test_delete_junk_unlinks_and_skips_git(inbox: Path, cfg) -> None:
+    (inbox / "foo.tmp").write_text("tmp", encoding="utf-8")
+    repo = inbox / "proj"
+    (repo / ".git").mkdir(parents=True)
+    (repo / "bar.tmp").write_text("tmp", encoding="utf-8")
+    engine = make_engine(cfg, dry_run=False, delete_junk=True)
+    engine.run_until_idle(timeout=30)
+    assert not (inbox / "foo.tmp").exists()
+    leftovers = [
+        p
+        for p in inbox.rglob("bar.tmp")
+        if p.is_file() and "_organization" not in p.parts
+    ]
+    assert leftovers, "git-tree junk must not be deleted"

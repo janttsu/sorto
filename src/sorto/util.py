@@ -42,7 +42,9 @@ MEANINGLESS_NAME_RE = re.compile(
 )
 
 UNSAFE_DEST_RE = re.compile(r"[\x00-\x1f]")
-RESERVED_DIRS = frozenset({"_unsorted", "_duplicates_candidates", "_organization"})
+RESERVED_DIRS = frozenset(
+    {"_unsorted", "_duplicates_candidates", "_organization", "_cache_temp_and_junk"}
+)
 
 
 class UnsafePathError(ValueError):
@@ -79,6 +81,7 @@ def git_workdir(path: Path) -> Path | None:
 
 
 DELETE_DUPLICATE_MARK = "__delete_duplicate__"
+DELETE_JUNK_MARK = "__delete_junk__"
 
 
 def state_dir(root: Path) -> Path:

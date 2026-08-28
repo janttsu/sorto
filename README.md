@@ -125,7 +125,8 @@ sorto run --root ~/Inbox --once --no-tui --fake-llm   # fake-llm is a hidden tes
 7. **Uncertain classification** → `_unsorted/` (unless `--dry-run` / `--suggest-only`, which only record a plan).
 8. **Crash-safe resume.** A file is `done` only after a durable `progress.jsonl` line is fsync'd following a successful move (or an explicit skip). Interrupted `moving` rows are recovered on the next start.
 9. **Duplicates are kept** unless you pass `--delete-duplicates` (or set `delete_duplicates = true` in config). Matching `sha256` of an already-done file is planned under `_duplicates_candidates/` and the original is left intact. With `--delete-duplicates`, the later copy is unlinked **only** after the original is confirmed present — and **never** if the file sits inside a git working tree (a `.git` directory or file in any parent). Dry-run never unlinks. Sampled hashes of huge files are not treated as delete-worthy duplicates.
-10. **Compact LLM packets only.** First 2–8 KB preview + metadata, never the whole large file.
+10. **Cache, temp, and backup junk** (Android `.thumbnails` / app `cache/`, `.trashed-*`, `.DS_Store`, `Thumbs.db`, `*.tmp`, partial downloads, `__MACOSX`, …) is moved to `_cache_temp_and_junk/` instead of mixed in with photos and documents. Pass `--delete-junk` (or `delete_junk = true`) to unlink that class; **never inside a git repo**. Dry-run never unlinks. Real camera photos, WhatsApp media, and documents are not treated as junk.
+11. **Compact LLM packets only.** First 2–8 KB preview + metadata, never the whole large file.
 
 ## State directory
 
@@ -161,6 +162,7 @@ sorto config [--root PATH]
 | `--dry-run` / `--suggest-only` | plan only; do not move |
 | `--yes` | apply `needs_user` suggestions instead of holding them |
 | `--delete-duplicates` | unlink later copies with the same full sha256 as an already-done file; **never inside a git repo** |
+| `--delete-junk` | unlink cache/temp/thumbnail/backup junk after classifying it; **never inside a git repo** |
 | `--workers N` | parallel LLM workers (default 1) |
 | `--scan-interval SEC` | rescan interval (default 5) |
 | `--once` | exit when the queue is empty after a full scan |
@@ -207,7 +209,7 @@ sorto status --root ~/Inbox
 
 Top-level folders are created only when needed:
 
-`documents/`, `spreadsheets/`, `presentations/`, `images/photos/`, `images/screenshots/`, `images/diagrams/`, `video/`, `audio/`, `code/`, `archives/`, `data/`, `installers_and_binaries/`, `email_and_exports/`, `3d_and_cad/`, `design/`, `ebooks/`, `_unsorted/`, `_duplicates_candidates/`.
+`documents/`, `spreadsheets/`, `presentations/`, `images/photos/`, `images/screenshots/`, `images/diagrams/`, `video/`, `audio/`, `code/`, `archives/`, `data/`, `installers_and_binaries/`, `email_and_exports/`, `3d_and_cad/`, `design/`, `ebooks/`, `_unsorted/`, `_duplicates_candidates/`, `_cache_temp_and_junk/`.
 
 - `default` — LLM proposes `dest_rel` (validated).
 - `by-type` — `{mapped-label}/{filename}`.

@@ -38,6 +38,7 @@ SUGGESTED_FOLDERS = (
     "ebooks",
     "_unsorted",
     "_duplicates_candidates",
+    "_cache_temp_and_junk",
 )
 
 LABEL_TO_FOLDER: dict[str, str] = {
@@ -81,6 +82,10 @@ LABEL_TO_FOLDER: dict[str, str] = {
     "unknown": "_unsorted",
     "unsorted": "_unsorted",
     "duplicate": "_duplicates_candidates",
+    "junk": "_cache_temp_and_junk",
+    "cache": "_cache_temp_and_junk",
+    "temp": "_cache_temp_and_junk",
+    "thumbnail": "_cache_temp_and_junk",
 }
 
 
@@ -115,6 +120,8 @@ class AnalysisPacket:
     meaningless_name: bool
     duplicate_of: str | None = None
     keep_extension: bool = True
+    is_junk: bool = False
+    junk_reason: str | None = None
 
     def to_llm_dict(self) -> dict[str, Any]:
         extra = {k: v[:1500] for k, v in self.extra_meta.items() if v}
@@ -139,6 +146,9 @@ class AnalysisPacket:
             payload["extra_meta"] = extra
         if self.duplicate_of:
             payload["duplicate_of"] = self.duplicate_of
+        if self.is_junk:
+            payload["is_junk"] = True
+            payload["junk_reason"] = self.junk_reason
         return payload
 
 

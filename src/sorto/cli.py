@@ -27,6 +27,11 @@ def _add_run_opts(p: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Delete files whose sha256 matches an already-done file. Never deletes inside a git repository.",
     )
+    p.add_argument(
+        "--delete-junk",
+        action="store_true",
+        help="Delete cache/temp/thumbnail/backup junk (Android caches, .DS_Store, *.tmp, …). Never deletes inside a git repository.",
+    )
     p.add_argument("--workers", type=int, default=None, help="Parallel LLM analysis workers (default 1)")
     p.add_argument("--scan-interval", type=float, default=None, metavar="SEC", help="Rescan interval (default 5)")
     p.add_argument("--once", action="store_true", help="Process current files, then exit when queue empty")

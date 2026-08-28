@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from sorto.config import SortoConfig
+from sorto.junk import classify_junk
 from sorto.models import AnalysisPacket
 from sorto.util import (
     is_meaningless_name,
@@ -212,6 +213,7 @@ def identify_file(
     sha = hash_file(path, size, cfg)
     filename = path.name
     ext = path.suffix
+    junk = classify_junk(src_rel, filename)
     return AnalysisPacket(
         src_rel=src_rel,
         filename=filename,
@@ -230,4 +232,6 @@ def identify_file(
         dest_scheme=cfg.dest_scheme,
         meaningless_name=is_meaningless_name(filename),
         keep_extension=not cfg.allow_extension_fix,
+        is_junk=junk is not None,
+        junk_reason=junk.reason if junk else None,
     )

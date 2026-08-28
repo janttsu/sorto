@@ -98,3 +98,21 @@ def apply_delete_duplicate(
     if dry_run:
         return
     os.unlink(src)
+
+
+def apply_delete_junk(
+    *,
+    root: Path,
+    src_rel: str,
+    dry_run: bool,
+) -> None:
+    """Unlink cache/temp/junk. Refuses git working trees and non-regular files."""
+    src = resolve_under_root(root, root / posix_rel(src_rel))
+    repo = git_workdir(src)
+    if repo is not None:
+        raise UnsafePathError(f"refusing to delete inside git repository {repo}")
+    if src.is_symlink() or not src.is_file():
+        raise UnsafePathError(f"refusing to delete non-regular file: {src}")
+    if dry_run:
+        return
+    os.unlink(src)

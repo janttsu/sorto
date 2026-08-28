@@ -48,6 +48,7 @@ allow_extension_fix = false
 dry_run = false
 yes = false
 delete_duplicates = false   # delete hash duplicates; never inside a git repo
+delete_junk = false         # delete cache/temp/junk; never inside a git repo
 follow = true
 log_level = "INFO"
 
@@ -83,6 +84,7 @@ class SortoConfig:
     dry_run: bool = False
     yes: bool = False
     delete_duplicates: bool = False
+    delete_junk: bool = False
     follow: bool = True
     include: list[str] = field(default_factory=list)
     exclude: list[str] = field(default_factory=lambda: list(DEFAULT_EXCLUDE))
@@ -135,6 +137,7 @@ class SortoConfig:
             f"dry_run = {str(self.dry_run).lower()}\n"
             f"yes = {str(self.yes).lower()}\n"
             f"delete_duplicates = {str(self.delete_duplicates).lower()}\n"
+            f"delete_junk = {str(self.delete_junk).lower()}\n"
             f"follow = {str(self.follow).lower()}\n"
             f'log_level = "{self.log_level}"\n'
             f"\n[scan]\n"
@@ -181,6 +184,7 @@ def _apply_table(cfg: SortoConfig, data: dict[str, Any]) -> SortoConfig:
         "dry_run": "dry_run",
         "yes": "yes",
         "delete_duplicates": "delete_duplicates",
+        "delete_junk": "delete_junk",
         "follow": "follow",
         "log_level": "log_level",
     }
@@ -227,6 +231,8 @@ def load_config(root: Path, *, cli: argparse.Namespace | None = None) -> SortoCo
             cfg.yes = True
         if getattr(cli, "delete_duplicates", False):
             cfg.delete_duplicates = True
+        if getattr(cli, "delete_junk", False):
+            cfg.delete_junk = True
         if getattr(cli, "workers", None) is not None:
             cfg.workers = int(cli.workers)
         if getattr(cli, "scan_interval", None) is not None:

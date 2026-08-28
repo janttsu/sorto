@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
+from sorto.junk import JUNK_FOLDER
 from sorto.models import LABEL_TO_FOLDER, SUGGESTED_FOLDERS, AnalysisPacket, Classification
 from sorto.util import (
     UnsafePathError,
@@ -81,9 +82,11 @@ def plan_destination(
     raw = (classification.dest_rel or "").strip()
     if packet.duplicate_of:
         raw = f"_duplicates_candidates/{packet.filename}"
+    elif packet.is_junk:
+        raw = f"{JUNK_FOLDER}/{packet.filename}"
     elif not raw:
         raw = f"{folder_for_label(classification.label)}/{packet.filename}"
-    if classification.confidence < 0.45 and not packet.duplicate_of:
+    if classification.confidence < 0.45 and not packet.duplicate_of and not packet.is_junk:
         raw = f"_unsorted/{packet.filename}"
     keep_ext = orig_ext if (packet.keep_extension or not allow_extension_fix) else None
     try:

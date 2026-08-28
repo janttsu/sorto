@@ -44,8 +44,18 @@ DESTINATION GUIDELINES (create only as path prefixes; do not invent deep trees):
 - ebooks/               — epub/mobi/azw
 - _unsorted/            — unknown or low confidence
 - _duplicates_candidates/ — only if the packet says this is a hash duplicate
+- _cache_temp_and_junk/ — caches, temp files, thumbnails, recycle leftovers, OS junk (safe to delete for disk space)
 
 Optional year segment from mtime when it helps (e.g. `documents/invoices/2023/file.pdf`).
 Do not nest more than 3 directory levels.
 
 If the packet includes `duplicate_of`, dest_rel MUST start with `_duplicates_candidates/`.
+If the packet has `is_junk` true, dest_rel MUST start with `_cache_temp_and_junk/`.
+
+JUNK (use `_cache_temp_and_junk/` — these are almost always safe to drop for disk space):
+- OS/desktop clutter: .DS_Store, Thumbs.db, desktop.ini, __MACOSX, AppleDouble `._*`
+- Temp/partial: *.tmp, *.temp, *.swp, *.crdownload, *.part, *~, Office `~$` lock files
+- Caches: any path under cache/, .cache/, code_cache/, image cache, Picasso/Glide caches
+- Android backups/dumps: .thumbnails/, .thumbdata*, .trashed-<id>-*, LOST.DIR, Android/data/<app>/cache, Android/data/<app>/code_cache
+- Recycle leftovers: .Trash, $RECYCLE.BIN, .trashed-*
+Do NOT treat real photos in DCIM/Camera, WhatsApp Media, documents, or source code as junk just because they came from a phone backup. Only cache/temp/thumbnail/recycle paths and names.
