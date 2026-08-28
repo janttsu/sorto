@@ -8,29 +8,38 @@ It never deletes, never overwrites, and never rewrites file contents.
 
 Python 3.11+ (developed against 3.11–3.14).
 
-```bash
-# from this repo (editable)
-python3 -m pip install -e ".[dev]"
+Do **not** run `python3 -m pip install` against the system interpreter on Arch/Fedora and similar — pip will refuse with `externally-managed-environment` (PEP 668). Use a venv, uv, or pipx.
 
-# or with uv
+**venv (recommended, works on Arch):**
+
+```bash
+cd sorto
+python3 -m venv .venv
+.venv/bin/pip install -U pip
+.venv/bin/pip install -e ".[dev]"
+.venv/bin/sorto --help
+# optional: source .venv/bin/activate
+```
+
+**uv:**
+
+```bash
+uv venv
 uv pip install -e ".[dev]"
+```
 
-# or isolated with pipx
+**pipx** (app install, not an editable checkout):
+
+```bash
 pipx install .
+# or: pipx install git+ssh://git@github.com/janttsu/sorto.git
 ```
 
-Optional MIME helper:
+Optional MIME helper (inside the same venv):
 
 ```bash
-python3 -m pip install -e ".[magic]"
-# plus system libmagic, e.g. Debian/Arch: libmagic / file
-```
-
-Then:
-
-```bash
-sorto --help
-python -m sorto --help
+.venv/bin/pip install -e ".[magic]"
+# plus system libmagic, e.g. Arch: pacman -S extra/file
 ```
 
 ## Point it at Ollama or LM Studio
