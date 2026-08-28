@@ -1,0 +1,57 @@
+[project]
+name = "sorto"
+version = "0.1.0"
+description = "Local-LLM file sorter/organizer with a live TUI"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "sorto" }]
+keywords = ["files", "organizer", "llm", "tui", "ollama"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Environment :: Console",
+  "Topic :: Utilities",
+]
+dependencies = [
+  "httpx==0.28.1",
+  "textual==3.7.1",
+]
+
+[project.optional-dependencies]
+magic = ["python-magic>=0.4.27"]
+dev = [
+  "pytest>=8.0",
+  "ruff>=0.6",
+]
+
+[project.scripts]
+sorto = "sorto.cli:main"
+
+[project.urls]
+Homepage = "https://bitbucket.org/janttsu/sorto"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+sorto = ["prompts/*.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "W"]
+ignore = ["E501"]
