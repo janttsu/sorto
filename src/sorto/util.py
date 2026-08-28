@@ -53,6 +53,34 @@ def utc_now_iso() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat()
 
 
+def git_workdir(path: Path) -> Path | None:
+    """Return the git working tree that contains *path*, or None.
+
+    Walks from the file's directory up to the filesystem root looking for
+    a `.git` directory or file (including linked worktrees). Used to refuse
+    duplicate-deletion inside any git repository.
+    """
+    try:
+        cur = path.resolve()
+    except OSError:
+        return None
+    if cur.is_file() or not cur.is_dir():
+        cur = cur.parent
+    while True:
+        try:
+            if (cur / ".git").exists():
+                return cur
+        except OSError:
+            return None
+        parent = cur.parent
+        if parent == cur:
+            return None
+        cur = parent
+
+
+DELETE_DUPLICATE_MARK = "__delete_duplicate__"
+
+
 def state_dir(root: Path) -> Path:
     return Path(root) / STATE_DIR_NAME
 

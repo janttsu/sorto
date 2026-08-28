@@ -9,7 +9,7 @@ from collections import deque
 from pathlib import Path
 from typing import Any
 
-from sorto.apply import ProgressLog, apply_move
+from sorto.apply import ProgressLog, apply_delete_duplicate, apply_move
 from sorto.config import SortoConfig
 from sorto.db import Database
 from sorto.eta import EtaTracker
@@ -25,7 +25,7 @@ from sorto.models import (
 )
 from sorto.plan import PlanError, existing_folder_hint, plan_destination
 from sorto.scan import discover_batch
-from sorto.util import estimate_tokens, posix_rel, utc_now_iso
+from sorto.util import DELETE_DUPLICATE_MARK, estimate_tokens, git_workdir, posix_rel, utc_now_iso
 
 log = logging.getLogger("sorto")
 
@@ -499,7 +499,7 @@ class Engine:
                 mtime_ns=row["mtime_ns"],
             )
             dup_of = None
-            if packet.sha256:
+            if packet.sha256 and not str(packet.sha256).startswith("sampled:"):
                 other = self.db.get_by_sha(packet.sha256)
                 if other and int(other["id"]) != file_id and other["src_rel"] != src_rel:
                     dup_of = str(other["src_rel"])
@@ -509,13 +509,15 @@ class Engine:
                 mime=packet.mime,
                 type_guess=packet.type_guess,
                 sha256=packet.sha256,
+                duplicate_of=dup_of,
             )
             dt = time.monotonic() - t0
             self._times.setdefault(file_id, {})["identify"] = dt
-            self.analyze_q.put(file_id)
-            self.emit("identify", f"{src_rel} mime={packet.mime or '?'} {dt:.2f}s", file_id)
-            # stash packet on the times dict
             self._times[file_id]["packet"] = packet  # type: ignore[assignment]
+            self.emit("identify", f"{src_rel} mime={packet.mime or '?'} {dt:.2f}s", file_id)
+            if dup_of and self._plan_duplicate_delete(file_id, path, src_rel, dup_of):
+                return
+            self.analyze_q.put(file_id)
         except OSError as e:
             self._fail(file_id, e)
         finally:
@@ -523,6 +525,42 @@ class Engine:
                 if self._current_identify == src_rel:
                     self._current_identify = None
             self._dec_inflight()
+
+    def _plan_duplicate_delete(
+        self, file_id: int, path: Path, src_rel: str, original_rel: str
+    ) -> bool:
+        """Queue a duplicate for deletion if enabled and not in a git repo.
+
+        Returns True when the file should skip LLM analysis.
+        """
+        if not self.cfg.delete_duplicates:
+            return False
+        repo = git_workdir(path)
+        if repo is not None:
+            self.emit(
+                "dup",
+                f"{src_rel} is a duplicate of {original_rel} but inside git repo {repo}; will not delete",
+                file_id,
+            )
+            return False
+        orig = self.cfg.root / original_rel
+        try:
+            if not orig.is_file() or orig.samefile(path):
+                return False
+        except OSError:
+            return False
+        self._times.setdefault(file_id, {})["delete_duplicate"] = original_rel
+        self.db.update(
+            file_id,
+            status="planned",
+            dest_rel=DELETE_DUPLICATE_MARK,
+            duplicate_of=original_rel,
+            llm_label="duplicate",
+            llm_reason=f"duplicate of {original_rel}",
+        )
+        self.move_q.put((file_id, DELETE_DUPLICATE_MARK))
+        self.emit("plan", f"delete duplicate {src_rel} (of {original_rel})", file_id)
+        return True
 
     def _cache_key(self, packet: AnalysisPacket) -> str:
         if packet.sha256:
@@ -770,6 +808,52 @@ class Engine:
             self._current_move = src_rel
         try:
             self.db.update(file_id, status="moving")
+            if dest_rel == DELETE_DUPLICATE_MARK:
+                if not self.cfg.delete_duplicates:
+                    self.db.update(file_id, status="discovered", dest_rel=None)
+                    self._unmark(file_id)
+                    if self._mark_enqueued(file_id):
+                        self.identify_q.put(file_id)
+                    return
+                original = (row["duplicate_of"] if "duplicate_of" in row.keys() else None) or ""
+                original = original or self._times.get(file_id, {}).get("delete_duplicate") or ""
+                if not original:
+                    self._fail(file_id, RuntimeError("duplicate_of missing"))
+                    return
+                try:
+                    apply_delete_duplicate(
+                        root=self.cfg.root,
+                        src_rel=src_rel,
+                        original_rel=str(original),
+                        dry_run=self.cfg.dry_run,
+                    )
+                except (OSError, ValueError) as e:
+                    self._fail(file_id, e)
+                    return
+                action = "dry_run_deleted_duplicate" if self.cfg.dry_run else "deleted_duplicate"
+                self.progress.append(
+                    {
+                        "action": action,
+                        "src_rel": src_rel,
+                        "duplicate_of": original,
+                        "sha256": row["sha256"],
+                    }
+                )
+                self.db.update(
+                    file_id,
+                    status="planned" if self.cfg.dry_run else "done",
+                    dest_rel=DELETE_DUPLICATE_MARK,
+                    duplicate_of=original,
+                    finished_at=utc_now_iso() if not self.cfg.dry_run else None,
+                )
+                self.emit(
+                    "deleted" if not self.cfg.dry_run else "dry-run",
+                    f"{src_rel} duplicate of {original}",
+                    file_id,
+                )
+                self._note_times(file_id, moved=False)
+                self._unmark(file_id)
+                return
             src_path = self.cfg.root / src_rel
             dest_path = self.cfg.root / dest_rel
             if not src_path.exists() and dest_path.exists():

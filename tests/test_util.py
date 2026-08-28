@@ -8,6 +8,7 @@ from sorto.eta import EtaTracker
 from sorto.util import (
     UnsafePathError,
     exclusive_move,
+    git_workdir,
     glob_match,
     is_meaningless_name,
     should_include,
@@ -74,6 +75,21 @@ def test_exclusive_move_refuses_overwrite(tmp_path: Path) -> None:
         exclusive_move(src, dest)
     assert dest.read_text(encoding="utf-8") == "old"
     assert src.read_text(encoding="utf-8") == "new"
+
+
+def test_git_workdir_detects_repo_and_not_plain_dir(tmp_path: Path) -> None:
+    plain = tmp_path / "inbox" / "a.txt"
+    plain.parent.mkdir()
+    plain.write_text("x", encoding="utf-8")
+    assert git_workdir(plain) is None
+    repo = tmp_path / "proj"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+    tracked = repo / "src" / "main.py"
+    tracked.parent.mkdir()
+    tracked.write_text("x", encoding="utf-8")
+    assert git_workdir(tracked) == repo.resolve()
+    assert git_workdir(repo) == repo.resolve()
 
 
 def test_eta_unknown_until_enough_samples() -> None:

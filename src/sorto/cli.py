@@ -21,7 +21,12 @@ def _add_root(p: argparse.ArgumentParser, required: bool = False) -> None:
 def _add_run_opts(p: argparse.ArgumentParser) -> None:
     p.add_argument("--dry-run", action="store_true", help="Analyze and show planned moves; do not move")
     p.add_argument("--suggest-only", action="store_true", help="Same as --dry-run")
-    p.add_argument("--yes", action="store_true", help="Do not hold needs_user files (still never overwrite/delete)")
+    p.add_argument("--yes", action="store_true", help="Do not hold needs_user files (still never overwrite)")
+    p.add_argument(
+        "--delete-duplicates",
+        action="store_true",
+        help="Delete files whose sha256 matches an already-done file. Never deletes inside a git repository.",
+    )
     p.add_argument("--workers", type=int, default=None, help="Parallel LLM analysis workers (default 1)")
     p.add_argument("--scan-interval", type=float, default=None, metavar="SEC", help="Rescan interval (default 5)")
     p.add_argument("--once", action="store_true", help="Process current files, then exit when queue empty")

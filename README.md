@@ -116,7 +116,7 @@ sorto run --root ~/Inbox --once --no-tui --fake-llm   # fake-llm is a hidden tes
 
 ## Safety guarantees
 
-1. **Never delete** user files. A move unlinks the source *after* a successful exclusive create at the destination (same inode via rename/hardlink, or a complete copy on cross-device).
+1. **Never delete** user files by default. A move unlinks the source *after* a successful exclusive create at the destination (same inode via rename/hardlink, or a complete copy on cross-device). The only exception is opt-in `--delete-duplicates` (see below), which still never deletes anything inside a git repository.
 2. **Never overwrite.** If the destination exists, sorto generates `name-2.ext`, then `name-3.ext`, then a timestamp/hash suffix. Placement uses `renameat2(RENAME_NOREPLACE)` on Linux, then `link`+`unlink`, then `O_CREAT|O_EXCL` copy. `os.replace` is not used on an unproven dest.
 3. **Never modify file contents.** Only rename and/or move.
 4. **Never leave the root.** `dest_rel` is validated: relative, no `..`, no `_organization/`, filename present.
@@ -124,7 +124,7 @@ sorto run --root ~/Inbox --once --no-tui --fake-llm   # fake-llm is a hidden tes
 6. **Never extract archives.** Zip/tar/7z/rar stay archives and go under `archives/`.
 7. **Uncertain classification** → `_unsorted/` (unless `--dry-run` / `--suggest-only`, which only record a plan).
 8. **Crash-safe resume.** A file is `done` only after a durable `progress.jsonl` line is fsync'd following a successful move (or an explicit skip). Interrupted `moving` rows are recovered on the next start.
-9. **Duplicates are kept.** Matching `sha256` of an already-done file is planned under `_duplicates_candidates/` and the original is left intact.
+9. **Duplicates are kept** unless you pass `--delete-duplicates` (or set `delete_duplicates = true` in config). Matching `sha256` of an already-done file is planned under `_duplicates_candidates/` and the original is left intact. With `--delete-duplicates`, the later copy is unlinked **only** after the original is confirmed present — and **never** if the file sits inside a git working tree (a `.git` directory or file in any parent). Dry-run never unlinks. Sampled hashes of huge files are not treated as delete-worthy duplicates.
 10. **Compact LLM packets only.** First 2–8 KB preview + metadata, never the whole large file.
 
 ## State directory
@@ -160,6 +160,7 @@ sorto config [--root PATH]
 | `--root PATH` | directory to organize (required) |
 | `--dry-run` / `--suggest-only` | plan only; do not move |
 | `--yes` | apply `needs_user` suggestions instead of holding them |
+| `--delete-duplicates` | unlink later copies with the same full sha256 as an already-done file; **never inside a git repo** |
 | `--workers N` | parallel LLM workers (default 1) |
 | `--scan-interval SEC` | rescan interval (default 5) |
 | `--once` | exit when the queue is empty after a full scan |

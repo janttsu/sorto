@@ -6,7 +6,14 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from sorto.util import posix_rel, safe_move, utc_now_iso
+from sorto.util import (
+    UnsafePathError,
+    git_workdir,
+    posix_rel,
+    resolve_under_root,
+    safe_move,
+    utc_now_iso,
+)
 
 
 class ProgressLog:
@@ -60,3 +67,34 @@ def apply_move(
     moved = safe_move(src, dest, root)
     actual = posix_rel(str(moved.relative_to(root.resolve())))
     return actual, True
+
+
+def apply_delete_duplicate(
+    *,
+    root: Path,
+    src_rel: str,
+    original_rel: str,
+    dry_run: bool,
+) -> None:
+    """Unlink a confirmed duplicate. Never touches the original.
+
+    Refuses if *src* is inside a git working tree, is not a regular file,
+    is the same inode as the original, or the original is missing.
+    """
+    src = resolve_under_root(root, root / posix_rel(src_rel))
+    orig = resolve_under_root(root, root / posix_rel(original_rel))
+    repo = git_workdir(src)
+    if repo is not None:
+        raise UnsafePathError(f"refusing to delete inside git repository {repo}")
+    if src.is_symlink() or not src.is_file():
+        raise UnsafePathError(f"refusing to delete non-regular file: {src}")
+    if not orig.is_file():
+        raise UnsafePathError(f"original missing; not deleting duplicate: {orig}")
+    try:
+        if src.samefile(orig):
+            raise UnsafePathError("refusing to delete the original file")
+    except OSError as e:
+        raise UnsafePathError(f"could not compare duplicate to original: {e}") from e
+    if dry_run:
+        return
+    os.unlink(src)

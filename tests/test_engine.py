@@ -193,3 +193,50 @@ def test_duplicate_goes_to_candidates(inbox: Path, cfg) -> None:
     orig = list((inbox / "documents").glob("*.txt"))
     assert orig
     assert orig[0].read_text(encoding="utf-8") == "same-bytes"
+
+
+def test_delete_duplicates_unlinks_copy_keeps_original(inbox: Path, cfg) -> None:
+    (inbox / "a.txt").write_text("same-bytes", encoding="utf-8")
+    engine = make_engine(cfg, dry_run=False)
+    engine.run_until_idle(timeout=30)
+    (inbox / "b.txt").write_text("same-bytes", encoding="utf-8")
+    engine2 = make_engine(cfg, dry_run=False, delete_duplicates=True)
+    engine2.run_until_idle(timeout=30)
+    orig = list((inbox / "documents").glob("*.txt"))
+    assert orig
+    assert orig[0].read_text(encoding="utf-8") == "same-bytes"
+    assert not (inbox / "b.txt").exists()
+    assert not (inbox / "_duplicates_candidates").exists()
+
+
+def test_delete_duplicates_dry_run_does_not_unlink(inbox: Path, cfg) -> None:
+    (inbox / "a.txt").write_text("same-bytes", encoding="utf-8")
+    engine = make_engine(cfg, dry_run=False)
+    engine.run_until_idle(timeout=30)
+    (inbox / "b.txt").write_text("same-bytes", encoding="utf-8")
+    engine2 = make_engine(cfg, dry_run=True, delete_duplicates=True)
+    engine2.run_until_idle(timeout=30)
+    assert (inbox / "b.txt").exists()
+    assert (inbox / "b.txt").read_text(encoding="utf-8") == "same-bytes"
+
+
+def test_delete_duplicates_never_inside_git_repo(inbox: Path, cfg) -> None:
+    (inbox / "a.txt").write_text("same-bytes", encoding="utf-8")
+    engine = make_engine(cfg, dry_run=False)
+    engine.run_until_idle(timeout=30)
+    repo = inbox / "proj"
+    (repo / ".git").mkdir(parents=True)
+    (repo / "b.txt").write_text("same-bytes", encoding="utf-8")
+    engine2 = make_engine(cfg, dry_run=False, delete_duplicates=True)
+    engine2.run_until_idle(timeout=30)
+    orig = list((inbox / "documents").glob("*.txt"))
+    assert orig
+    assert orig[0].read_text(encoding="utf-8") == "same-bytes"
+    leftovers = [
+        p
+        for p in inbox.rglob("*.txt")
+        if p.is_file() and "_organization" not in p.parts
+    ]
+    # Git-tree duplicate is never unlinked; it may still be moved to candidates.
+    assert len(leftovers) >= 2
+    assert any(p.read_text(encoding="utf-8") == "same-bytes" for p in leftovers if p != orig[0])

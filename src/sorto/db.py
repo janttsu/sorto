@@ -31,7 +31,8 @@ CREATE TABLE IF NOT EXISTS files (
     finished_at TEXT,
     dev INTEGER,
     ino INTEGER,
-    rename INTEGER DEFAULT 0
+    rename INTEGER DEFAULT 0,
+    duplicate_of TEXT
 );
 
 CREATE TABLE IF NOT EXISTS events (
@@ -81,6 +82,7 @@ class Database:
             "dev": "INTEGER",
             "ino": "INTEGER",
             "rename": "INTEGER DEFAULT 0",
+            "duplicate_of": "TEXT",
         }
         for name, typ in extras.items():
             if name not in cols:
@@ -238,6 +240,7 @@ class Database:
             "dev",
             "ino",
             "rename",
+            "duplicate_of",
         }
     )
 
