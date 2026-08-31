@@ -216,6 +216,20 @@ class FakeLLMClient:
             raise LLMParseError("invalid JSON after repair: not-json")
         if self.handler:
             return self.handler(packet, system_prompt)
+        if packet.dest_scheme == "library":
+            from sorto.library import route_library
+
+            dest = route_library(packet)
+            if dest:
+                return Classification(
+                    label=dest.split("/", 1)[0],
+                    confidence=0.9,
+                    dest_rel=dest,
+                    rename=False,
+                    reason="fake library heuristic",
+                    needs_user=self.needs_user,
+                    raw="{}",
+                )
         ext = (packet.extension or "").lower()
         folder = {
             ".pdf": "documents",

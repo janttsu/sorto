@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from sorto.junk import JUNK_FOLDER
+from sorto.library import route_library
 from sorto.models import LABEL_TO_FOLDER, SUGGESTED_FOLDERS, AnalysisPacket, Classification
 from sorto.util import (
     UnsafePathError,
@@ -82,20 +83,33 @@ def plan_destination(
     raw = (classification.dest_rel or "").strip()
     if packet.duplicate_of:
         raw = f"_duplicates_candidates/{packet.filename}"
+    elif packet.dest_scheme == "library":
+        lib = route_library(packet)
+        raw = lib or raw or f"_unsorted/{packet.filename}"
     elif packet.is_junk:
         raw = f"{JUNK_FOLDER}/{packet.filename}"
     elif not raw:
         raw = f"{folder_for_label(classification.label)}/{packet.filename}"
-    if classification.confidence < 0.45 and not packet.duplicate_of and not packet.is_junk:
+    if (
+        classification.confidence < 0.45
+        and not packet.duplicate_of
+        and not packet.is_junk
+        and packet.dest_scheme != "library"
+    ):
         raw = f"_unsorted/{packet.filename}"
     keep_ext = orig_ext if (packet.keep_extension or not allow_extension_fix) else None
+    preserve = packet.dest_scheme == "library"
     try:
-        cleaned = validate_dest_rel(raw, original_ext=keep_ext)
+        cleaned = validate_dest_rel(raw, original_ext=keep_ext, preserve_names=preserve)
     except UnsafePathError as e:
         raise PlanError(str(e)) from e
     dest_rel = apply_scheme(packet, classification, cleaned)
+    if preserve:
+        dest_rel = cleaned
     try:
-        dest_rel = validate_dest_rel(dest_rel, original_ext=keep_ext)
+        dest_rel = validate_dest_rel(
+            dest_rel, original_ext=keep_ext, preserve_names=preserve
+        )
     except UnsafePathError as e:
         raise PlanError(str(e)) from e
     dest_path = unique_dest(root, dest_rel, root / packet.src_rel)
@@ -104,7 +118,7 @@ def plan_destination(
     except ValueError as e:
         raise PlanError("destination escaped root") from e
     try:
-        return validate_dest_rel(rel, original_ext=keep_ext)
+        return validate_dest_rel(rel, original_ext=keep_ext, preserve_names=preserve)
     except UnsafePathError as e:
         raise PlanError(str(e)) from e
 

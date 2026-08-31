@@ -44,7 +44,7 @@ def _add_run_opts(p: argparse.ArgumentParser) -> None:
     p.add_argument("--llm-api-key", default=None, help="Optional API key")
     p.add_argument(
         "--dest-scheme",
-        choices=["default", "by-type", "by-type-year"],
+        choices=["default", "by-type", "by-type-year", "library"],
         default=None,
     )
     p.add_argument("--log-level", default=None, help="DEBUG/INFO/WARNING/ERROR")

@@ -173,7 +173,7 @@ sorto config [--root PATH]
 | `--llm-url URL` | OpenAI-compatible base URL |
 | `--llm-model NAME` | model id |
 | `--llm-api-key KEY` | optional |
-| `--dest-scheme default\|by-type\|by-type-year` | how destinations are built |
+| `--dest-scheme default\|by-type\|by-type-year\|library` | how destinations are built (`library` = Photos/YYYY/YYYY-MM + Johnny.Decimal documents) |
 | `--log-level LEVEL` | `DEBUG` / `INFO` / … |
 | `--no-tui` | status lines on stdout instead of Textual |
 
@@ -214,6 +214,15 @@ Top-level folders are created only when needed:
 - `default` — LLM proposes `dest_rel` (validated).
 - `by-type` — `{mapped-label}/{filename}`.
 - `by-type-year` — `{mapped-label}/{year}/{filename}` from mtime.
+- `library` — copy the `/mnt/hdd/organized` layout so a small local LLM does not have to invent structure:
+  - **Photos / Videos / Audio / Code / Archives** under `YYYY/YYYY-MM/` from mtime
+  - **Screenshots / Signal / WhatsApp** as `YYYY-MM-<Event>` under Photos
+  - **Documents** into Johnny.Decimal IDs when the filename is clear (`lasku`, `tiliote`, `hoitotahto`, `kela`, Hetzner, …); otherwise `Documents/_quarry/YYYY/YYYY-MM/`
+  - **TempAndCache** for cache/temp/junk; **Backup-Garbage** for firmware, dpkg debris, maildir crumbs
+  - **Emails/YYYY**, **To-Annex/Large-Files** for very large video/archives
+  - Leave **GitRepositories**, **OS-Extracts**, **WebsiteBackups**, **Wepardi**, **Int2000**, **Media** alone
+
+  If the root already has several of `Photos`, `Documents`, `Videos`, `Audio`, `TempAndCache`, `Backup-Garbage`, sorto selects `library` automatically (override with `--dest-scheme`). Heuristics skip the LLM for those high-volume types so a 14B local model is only asked about ambiguous documents.
 
 Renames happen only when the original name looks meaningless (`IMG_1234`, `DSC0001`, `untitled`, `download (3)`, `scan0001`, …). Useful names are preserved. Original extension is kept unless you enable `allow_extension_fix` in config.
 

@@ -225,7 +225,12 @@ def sanitize_dir_component(name: str) -> str:
     return name[:60]
 
 
-def validate_dest_rel(dest_rel: str, *, original_ext: str | None = None) -> str:
+def validate_dest_rel(
+    dest_rel: str,
+    *,
+    original_ext: str | None = None,
+    preserve_names: bool = False,
+) -> str:
     """Return a cleaned relative dest path, or raise UnsafePathError."""
     if dest_rel is None:
         raise UnsafePathError("dest_rel is missing")
@@ -248,8 +253,11 @@ def validate_dest_rel(dest_rel: str, *, original_ext: str | None = None) -> str:
     filename = parts[-1]
     if filename in (".", "..") or "/" in filename:
         raise UnsafePathError("dest_rel missing filename")
-    dirs = [sanitize_dir_component(p) for p in parts[:-1]]
-    dirs = [d for d in dirs if d]
+    if preserve_names:
+        dirs = [p for p in parts[:-1] if p]
+    else:
+        dirs = [sanitize_dir_component(p) for p in parts[:-1]]
+        dirs = [d for d in dirs if d]
     cleaned = "/".join(dirs + [filename]) if dirs else filename
     if original_ext:
         ext = original_ext if original_ext.startswith(".") else f".{original_ext}"

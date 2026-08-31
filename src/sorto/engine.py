@@ -15,6 +15,7 @@ from sorto.db import Database
 from sorto.eta import EtaTracker
 from sorto.identify import identify_file
 from sorto.junk import JUNK_FOLDER
+from sorto.library import keep_in_place, library_top_folders, route_library
 from sorto.llm import FakeLLMClient, LLMError, LLMParseError, OpenAICompatClient
 from sorto.models import (
     SUGGESTED_FOLDERS,
@@ -83,16 +84,29 @@ class Engine:
         self._enqueued: set[int] = set()
         self._kick_counts: dict[int, int] = {}
         self._system_prompt = self._load_prompt()
-        self._folders = list(SUGGESTED_FOLDERS)
+        self._folders = (
+            library_top_folders() if self.cfg.dest_scheme == "library" else list(SUGGESTED_FOLDERS)
+        )
 
     def _load_prompt(self) -> str:
         path = self.cfg.prompt_path
         try:
-            return path.read_text(encoding="utf-8")
+            text = path.read_text(encoding="utf-8")
         except OSError:
             from sorto.config import packaged_prompt
 
-            return packaged_prompt()
+            text = packaged_prompt()
+        if self.cfg.dest_scheme == "library":
+            extra_path = self.cfg.state / "prompts" / "classify-library.md"
+            try:
+                extra = extra_path.read_text(encoding="utf-8")
+            except OSError:
+                from sorto.config import packaged_library_prompt
+
+                extra = packaged_library_prompt()
+            if extra and extra not in text:
+                text = text.rstrip() + "\n\n" + extra
+        return text
 
     def emit(self, kind: str, message: str, file_id: int | None = None) -> None:
         line = f"{utc_now_iso()}  {kind:8}  {message}"
@@ -527,6 +541,8 @@ class Engine:
                 return
             if packet.is_junk and self._plan_junk(file_id, path, src_rel, packet):
                 return
+            if self.cfg.dest_scheme == "library" and self._plan_library(file_id, path, src_rel, packet):
+                return
             self.analyze_q.put(file_id)
         except OSError as e:
             self._fail(file_id, e)
@@ -612,7 +628,7 @@ class Engine:
                 allow_extension_fix=False,
             )
         except PlanError:
-            dest_rel = f"{JUNK_FOLDER}/{packet.filename}"
+            dest_rel = route_library(packet) or f"{JUNK_FOLDER}/{packet.filename}"
         self.db.update(
             file_id,
             status="planned",
@@ -623,6 +639,59 @@ class Engine:
         )
         self.move_q.put((file_id, dest_rel))
         self.emit("plan", f"{src_rel} → {dest_rel} (junk: {reason})", file_id)
+        return True
+
+    def _plan_library(
+        self, file_id: int, path: Path, src_rel: str, packet: AnalysisPacket
+    ) -> bool:
+        """Skip the LLM when library heuristics already know the dest."""
+        if keep_in_place(src_rel):
+            self.db.update(file_id, status="done", dest_rel=src_rel, finished_at=utc_now_iso())
+            self.progress.append(
+                {"action": "skipped", "src_rel": src_rel, "reason": "library_keep_tree"}
+            )
+            self.emit("skip", f"{src_rel} kept (library tree)", file_id)
+            self._unmark(file_id)
+            return True
+        dest = route_library(packet)
+        if not dest:
+            return False
+        try:
+            dest_rel = plan_destination(
+                self.cfg.root,
+                packet,
+                Classification(
+                    label=dest.split("/", 1)[0],
+                    confidence=0.92,
+                    dest_rel=dest,
+                    rename=False,
+                    reason="library heuristic (mtime/type/filename)",
+                    needs_user=False,
+                ),
+                allow_extension_fix=False,
+            )
+        except PlanError:
+            dest_rel = dest
+        src_path = path.resolve()
+        dest_path = (self.cfg.root / dest_rel).resolve()
+        if src_path == dest_path:
+            self.db.update(file_id, status="done", dest_rel=dest_rel, finished_at=utc_now_iso())
+            self.progress.append(
+                {"action": "skipped", "src_rel": src_rel, "reason": "already_in_place"}
+            )
+            self.emit("skip", f"{src_rel} already in place", file_id)
+            self._unmark(file_id)
+            return True
+        self.db.update(
+            file_id,
+            status="planned",
+            dest_rel=dest_rel,
+            llm_label=dest.split("/", 1)[0],
+            llm_confidence=0.92,
+            llm_reason="library heuristic",
+        )
+        self.move_q.put((file_id, dest_rel))
+        self.emit("plan", f"{src_rel} → {dest_rel} (library)", file_id)
         return True
 
     def _cache_key(self, packet: AnalysisPacket) -> str:

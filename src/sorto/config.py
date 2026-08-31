@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from sorto import STATE_DIR_NAME
+from sorto.library import looks_like_library_root
 from sorto.util import state_dir, user_config_path
 
 DEFAULT_LLM_URL = "http://127.0.0.1:11434/v1"
@@ -42,7 +43,7 @@ workers = 1
 identify_workers = 4
 scan_interval = 5
 max_file_mb = 64
-dest_scheme = "default"          # default | by-type | by-type-year
+dest_scheme = "default"          # default | by-type | by-type-year | library
 hash_max_mb = 256
 allow_extension_fix = false
 dry_run = false
@@ -150,6 +151,14 @@ def packaged_prompt() -> str:
     return importlib.resources.files("sorto").joinpath("prompts/classify.md").read_text(encoding="utf-8")
 
 
+def packaged_library_prompt() -> str:
+    return (
+        importlib.resources.files("sorto")
+        .joinpath("prompts/classify-library.md")
+        .read_text(encoding="utf-8")
+    )
+
+
 def _load_toml(path: Path) -> dict[str, Any]:
     if not path.is_file():
         return {}
@@ -211,6 +220,9 @@ def ensure_state_dir(root: Path) -> Path:
     prompt = st / "prompts" / "classify.md"
     if not prompt.exists():
         prompt.write_text(packaged_prompt(), encoding="utf-8")
+    lib_prompt = st / "prompts" / "classify-library.md"
+    if not lib_prompt.exists():
+        lib_prompt.write_text(packaged_library_prompt(), encoding="utf-8")
     progress = st / "progress.jsonl"
     if not progress.exists():
         progress.touch()
@@ -260,8 +272,9 @@ def load_config(root: Path, *, cli: argparse.Namespace | None = None) -> SortoCo
             cfg.llm_model = str(cli.llm_model)
         if getattr(cli, "llm_api_key", None):
             cfg.llm_api_key = str(cli.llm_api_key)
-        if getattr(cli, "dest_scheme", None):
-            cfg.dest_scheme = str(cli.dest_scheme)
+        cli_scheme = getattr(cli, "dest_scheme", None)
+        if cli_scheme:
+            cfg.dest_scheme = str(cli_scheme)
         if getattr(cli, "log_level", None):
             cfg.log_level = str(cli.log_level)
 
@@ -281,7 +294,10 @@ def load_config(root: Path, *, cli: argparse.Namespace | None = None) -> SortoCo
     cfg.identify_workers = max(1, int(cfg.identify_workers))
     cfg.scan_interval = max(0.5, float(cfg.scan_interval))
     scheme = cfg.dest_scheme.strip().lower()
-    if scheme not in {"default", "by-type", "by-type-year"}:
+    if scheme not in {"default", "by-type", "by-type-year", "library"}:
         raise ValueError(f"unknown dest-scheme: {cfg.dest_scheme}")
+    cli_forced = cli is not None and bool(getattr(cli, "dest_scheme", None))
+    if scheme == "default" and not cli_forced and looks_like_library_root(root):
+        scheme = "library"
     cfg.dest_scheme = scheme
     return cfg

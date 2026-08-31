@@ -250,11 +250,9 @@ def test_junk_goes_to_cache_temp_folder(inbox: Path, cfg) -> None:
     engine = make_engine(cfg, dry_run=False)
     engine.run_until_idle(timeout=30)
     junk_root = inbox / "_cache_temp_and_junk"
-    assert (junk_root / ".DS_Store").exists() or list(junk_root.rglob(".DS_Store"))
+    assert list(junk_root.rglob(".DS_Store"))
     assert list(junk_root.rglob("blob"))
-    assert (inbox / "documents" / "invoice.pdf").exists() or (
-        inbox / "invoice.pdf"
-    ).exists() is False
+    assert (inbox / "documents" / "invoice.pdf").exists()
     assert not (inbox / ".DS_Store").exists()
 
 
@@ -272,3 +270,14 @@ def test_delete_junk_unlinks_and_skips_git(inbox: Path, cfg) -> None:
         if p.is_file() and "_organization" not in p.parts
     ]
     assert leftovers, "git-tree junk must not be deleted"
+
+
+def test_library_scheme_photos_year_month(inbox: Path, cfg) -> None:
+    (inbox / "IMG_9999.jpg").write_bytes(b"\xff\xd8\xff" + b"x" * 40)
+    engine = make_engine(cfg, dry_run=False, dest_scheme="library")
+    engine.run_until_idle(timeout=30)
+    photos = list((inbox / "Photos").rglob("IMG_9999.jpg"))
+    assert photos
+    assert "Photos" in photos[0].parts
+    year_dirs = [p.name for p in photos[0].parents if p.name.isdigit() and len(p.name) == 4]
+    assert year_dirs
