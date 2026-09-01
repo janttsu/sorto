@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from textual.app import App, ComposeResult
@@ -11,6 +12,13 @@ from textual.widgets import Footer, Static
 from sorto.engine import Engine
 from sorto.models import Snapshot
 from sorto.util import format_duration, human_size
+
+log = logging.getLogger("sorto.tui")
+
+
+def _plain(text: str = "", *, id: str | None = None) -> Static:
+    """Static that never parses Rich markup (filenames contain [tags])."""
+    return Static(text, id=id, markup=False)
 
 
 def _bar(pct: float, width: int = 28) -> str:
@@ -27,7 +35,7 @@ class HelpScreen(ModalScreen[None]):
     BINDINGS = [Binding("escape", "dismiss", "Close"), Binding("q", "dismiss", "Close")]
 
     def compose(self) -> ComposeResult:
-        yield Static(
+        yield _plain(
             "\n".join(
                 [
                     " sorto keys",
@@ -63,7 +71,7 @@ class LogScreen(ModalScreen[None]):
             text = "\n".join(lines[-80:]) or "(empty)"
         except OSError as e:
             text = f"could not read {self.path}: {e}"
-        yield Static(f"{self.path}\n\n{text}", id="log-body")
+        yield _plain(f"{self.path}\n\n{text}", id="log-body")
 
     def action_dismiss(self) -> None:  # type: ignore[override]
         self.app.pop_screen()
@@ -159,21 +167,21 @@ class SortoApp(App[None]):
         self._quitting = False
 
     def compose(self) -> ComposeResult:
-        yield Static("sorto", id="title")
-        yield Static("", id="paused-banner")
-        yield Static("", id="stats")
-        yield Static("", id="progress")
-        yield Static("NOW", id="now-title")
-        yield Static("", id="now")
+        yield _plain("sorto", id="title")
+        yield _plain("", id="paused-banner")
+        yield _plain("", id="stats")
+        yield _plain("", id="progress")
+        yield _plain("NOW", id="now-title")
+        yield _plain("", id="now")
         with Horizontal(id="mid"):
             with Vertical():
-                yield Static("ANALYSIS", id="analysis-title")
-                yield Static("", id="analysis")
+                yield _plain("ANALYSIS", id="analysis-title")
+                yield _plain("", id="analysis")
             with Vertical():
-                yield Static("QUEUE / RECENT", id="queue-title")
-                yield Static("", id="queue")
-        yield Static("", id="log")
-        yield Static(
+                yield _plain("QUEUE / RECENT", id="queue-title")
+                yield _plain("", id="queue")
+        yield _plain("", id="log")
+        yield _plain(
             "keys: q quit  p pause  d dry-run (idle)  o open log  ? help",
             id="keys",
         )
@@ -185,8 +193,12 @@ class SortoApp(App[None]):
         self._tick()
 
     def _tick(self) -> None:
-        snap = self.engine.snapshot()
-        self._render(snap)
+        try:
+            snap = self.engine.snapshot()
+            self._render(snap)
+        except Exception:
+            log.exception("tui render failed")
+            return
         if snap.finished and not self.engine.cfg.follow and not self._quitting:
             self._quitting = True
             self.set_timer(0.4, self.exit)
