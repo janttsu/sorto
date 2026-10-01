@@ -1,0 +1,8 @@
+include LICENSE
+include Makefile
+include README.md
+include CHANGELOG.md
+include pyproject.toml
+graft src/sorto
+graft tests
+global-exclude *.py[cod] __pycache__ .pytest_cache .ruff_cache
