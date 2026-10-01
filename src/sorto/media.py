@@ -238,6 +238,22 @@ def image_preview(path: Path, max_px: int) -> bytes:
     )
 
 
+def picture_preview(data: bytes, max_px: int) -> bytes:
+    """Downscaled JPEG of a picture held in memory (a preview stored inside another file)."""
+    binary = shutil.which("magick") or shutil.which("convert")
+    if not binary or not data:
+        return b""
+    try:
+        proc = subprocess.run(
+            [binary, "-", "-background", "white", "-flatten", "-thumbnail", f"{max_px}x{max_px}>", "-strip",
+             "-quality", "80", "jpg:-"],
+            input=data, capture_output=True, timeout=30, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return b""
+    return proc.stdout if proc.returncode == 0 and proc.stdout[:2] == b"\xff\xd8" else b""
+
+
 def video_duration(path: Path) -> float:
     if not shutil.which("ffprobe"):
         return 0.0

@@ -1358,6 +1358,8 @@ class Engine:
         if cls is None:
             return
         item = self.index.get(cls.jd_id)
+        # The model quotes the rule it followed briefly; show the rule as the user wrote it.
+        followed = self.rules.match(cls.rule)
         self._set_view(
             label=cls.label,
             confidence=cls.confidence,
@@ -1365,7 +1367,7 @@ class Engine:
             jd_id=item.id if item else cls.jd_id,
             jd_name=item.name if item else "",
             reason=cls.reason,
-            rule=cls.rule,
+            rule=followed or cls.rule,
             latency_s=getattr(self.llm, "last_latency_s", 0.0) or 0.0,
             tokens=getattr(self.llm, "last_tokens_est", 0) or self._tokens_est,
             stage="moving",
@@ -1420,6 +1422,8 @@ class Engine:
                 own_media=self._is_own_media(packet, cls),
                 date_folders=self.cfg.date_folders,
                 date_ids=self.cfg.date_folder_ids,
+                # A folder that is not there yet is made only when one of the user's rules was followed.
+                new_subfolder=bool(followed) and self.cfg.new_subfolders == "rules",
             )
         except PlanError as e:
             self._keep(file_id, src_rel, "needs_user", str(e))
@@ -1427,6 +1431,16 @@ class Engine:
         if self.cfg.reorganize and self._stays(file_id, src_rel, plan, cls):
             return
         self._set_view(dest_rel=plan.dest_rel, jd_id=plan.item.id, jd_name=plan.item.name)
+        if plan.new_subfolder:
+            self._set_view(folder=f"new folder {plan.new_subfolder} in {plan.item.id} {plan.item.name}, as your rule asks")
+        elif cls.subfolder and not plan.subfolder and not plan.dated and not new:
+            # Said out loud: a folder the model named was not used.
+            self.emit(
+                "jd",
+                f"{src_rel}: the model suggested the folder {cls.subfolder!r} in {plan.item.id}, which does not "
+                "exist; filed into the ID itself (a new folder is only made when one of your rules asks for it)",
+                file_id,
+            )
         self.db.update(file_id, status="planned", dest_rel=plan.dest_rel, jd_id=plan.item.id)
         created = f" (new ID {plan.item.id} {plan.item.name})" if new else ""
         self.emit("plan", f"{src_rel} → {plan.item.id} {plan.dest_rel}{created}", file_id)
@@ -1440,7 +1454,29 @@ class Engine:
             if error:
                 self._keep(file_id, src_rel, "needs_user", error)
                 return
+        if plan.new_subfolder and not self.cfg.dry_run:
+            error = self._create_subfolder(file_id, src_rel, plan)
+            if error:
+                self._keep(file_id, src_rel, "needs_user", error)
+                return
         self._move(file_id, src_rel, plan.dest_rel)
+
+    def _create_subfolder(self, file_id: int, for_rel: str, plan: Plan) -> str:
+        """Create the named folder a user rule asked for. Returns "" when it is there, else why not."""
+        rel = f"{plan.item.rel}/{plan.new_subfolder}"
+        path = self.cfg.target / rel
+        if git_workdir(path, stop=self.cfg.target) is not None:
+            return f"{rel} would be inside a git repository: nothing is filed into a repository"
+        try:
+            if not is_under_root(self.cfg.target, path.parent):
+                raise OSError(f"{path.parent} is outside the target")
+            path.mkdir(exist_ok=True)
+        except OSError as e:
+            return f"could not create the folder {rel}: {e}"
+        self.progress.append({"action": "created_folder", "rel": rel, "jd_id": plan.item.id, "for": for_rel})
+        self.emit("jd", f"created folder {plan.new_subfolder} in {plan.item.id} {plan.item.name} (asked for by a rule)", file_id)
+        self._note_run("new folder", f"created {rel} for {for_rel}")
+        return ""
 
     def _goes_by_date(self, packet: AnalysisPacket, cls: Classification, item: JDItem | None) -> bool:
         """This photo or video will be filed into YYYY/MM rather than next to other files."""

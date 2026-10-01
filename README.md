@@ -7,7 +7,7 @@
 ## In short
 
 - **Point it at an inbox and your archive.** For each file sorto shows what it is, which Johnny.Decimal ID it belongs in and why, and the full destination path. Then it moves the file and goes on to the next one.
-- **It looks inside files:** the text of PDFs and documents, email senders and subjects, photo dates and GPS positions (sorto tells the model which city a position is in), and the pictures and video frames themselves.
+- **It looks inside files:** the text of PDFs and documents, email senders and subjects, photo dates and GPS positions (sorto tells the model which city a position is in), the pictures and video frames themselves, and the title, part names and preview picture stored in a 3D model file.
 - **It follows your structure** (areas, categories, IDs, JDex notes, subfolders). It never overwrites anything, and files it is unsure about stay where they are.
 - **100% local:** it only talks to a model server on this machine ([Ollama](https://ollama.com/)).
 
@@ -54,7 +54,7 @@ Write rules in plain language, in any language, in `~/.config/sorto/rules.md`:
 - Everything about Example Club goes under an ID of its own.
 ```
 
-The model follows them for every file and shows which rule it used. A rule can ask for an ID of its own: if it does not exist yet, sorto creates it for the first such file. The file is re-read every minute, so edits apply while sorto runs.
+The model follows them for every file and shows which rule it used. A rule can ask for an ID of its own: if it does not exist yet, sorto creates it for the first such file. A rule can also ask for files to be kept in folders named after what they are ("knitting patterns go to 32.11, each in a folder named after the garment"); sorto creates those folders inside the ID. The file is re-read every minute, so edits apply while sorto runs.
 
 A second file, `~/.config/sorto/junk.md`, lists file patterns that are never needed. Those files go straight into one folder of your archive, without asking the model (they are moved, never deleted):
 

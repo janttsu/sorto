@@ -4,7 +4,15 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
-from sorto.jd import YEAR_MONTH_RE, YEAR_RE, JDIndex, JDItem, is_date_id
+from sorto.jd import (
+    YEAR_MONTH_RE,
+    YEAR_RE,
+    JDIndex,
+    JDItem,
+    clean_folder_name,
+    existing_folder_like,
+    is_date_id,
+)
 from sorto.media import capture_date, date_subfolder, name_date
 from sorto.models import AnalysisPacket, Classification
 from sorto.util import (
@@ -27,7 +35,8 @@ class Plan:
     item: JDItem
     subfolder: str
     renamed: bool
-    dated: bool = False  # filed by capture date (YYYY/MM)
+    dated: bool = False
+    new_subfolder: str = ""  # a folder inside the ID that a user rule asked for and that is not there yet  # filed by capture date (YYYY/MM)
 
 
 def _clean_filename(name: str) -> str:
@@ -74,6 +83,7 @@ def plan_destination(
     own_media: bool = False,
     date_folders: str = "off",
     date_ids: Iterable[str] = (),
+    new_subfolder: bool = False,
 ) -> Plan:
     """Map the model's JD ID (+ optional subfolder) to a unique path under *target*.
 
@@ -89,6 +99,15 @@ def plan_destination(
         # A year folder the model picked for a photo or video with no capture date: it can only
         # have come from the file's modification time, which is the day of a copy or a download.
         dir_rel, sub = item.rel, ""
+    made = ""
+    if not sub and new_subfolder and new_item is None:
+        # A user rule asked for a named folder and the model named one that is not there yet.
+        # sorto still decides what is a usable name, and uses a folder that already goes by it.
+        name = clean_folder_name(cls.subfolder)
+        if name:
+            sub = existing_folder_like(target / item.rel, name) or name
+            made = "" if (target / item.rel / sub).is_dir() else sub
+            dir_rel = f"{item.rel}/{sub}"
     # The user's own photos and videos are always filed by capture date, whatever subfolder
     # the model suggested. The date comes from the file, never from the model. In the IDs the
     # user listed (date_folder_ids) that holds for every photo and video, whatever the model said.
@@ -110,4 +129,7 @@ def plan_destination(
         rel = posix_rel(str(dest.relative_to(target)))
     except ValueError as e:
         raise PlanError("destination escaped target") from e
-    return Plan(dest_rel=rel, item=item, subfolder=sub, renamed=renamed, dated=bool(stamp))
+    return Plan(
+        dest_rel=rel, item=item, subfolder=sub, renamed=renamed, dated=bool(stamp),
+        new_subfolder="" if stamp else made,
+    )

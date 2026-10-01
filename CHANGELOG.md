@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- A rule can ask for files to be kept in folders named after what they are;
+  sorto creates such a folder inside the ID. `new_subfolders = "off"` turns
+  it off.
+- The `Rule:` line shows the whole rule as written, not the model's short
+  quote of it.
+- 3D model files: the title, part names and stored preview picture of a 3MF,
+  and the header of an STL, are read and shown to the model.
+- A folder the model suggests that does not exist is no longer dropped
+  silently: the log says the file went to the ID itself.
+
 ## 0.1.0b1
 
 First public beta. sorto works, but it is young: use `--dry-run` or `--confirm`

@@ -24,6 +24,12 @@ MAX_RULES_CHARS = 8000
 # Opening of the prompt section; llm.py looks for it to add the rules reminder.
 SECTION_TITLE = "USER RULES (written by the user;"
 COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
+BULLET_RE = re.compile(r"^\s{0,3}(?:[-*+•]|\d{1,2}[.)])\s+")
+
+
+def _plain(text: str) -> str:
+    """Lower-case words only, for comparing a quote with a rule."""
+    return " ".join(re.sub(r"[^\w]+", " ", (text or "").casefold()).split())
 RULE_ID_RE = re.compile(r"(?<![\d.])(\d{2}\.\d{2})(?!\d|\.\d)")
 
 RULES_TEMPLATE = """\
@@ -39,7 +45,8 @@ subjects, photo dates, GPS positions, camera models, and so on.
 A rule can give a topic an ID of its own ("everything about X goes under
 its own ID"): if your target has no such ID yet, sorto creates it, with the
 next free number. The model never chooses numbers or paths, and uncertain
-files still stay where they are.
+files still stay where they are. A rule can also ask for files to be kept in
+folders named after what they are: sorto creates such a folder inside the ID.
 Everything inside these comment markers is ignored.
 
 Examples (copy them below the comment and edit):
@@ -50,6 +57,7 @@ Examples (copy them below the comment and edit):
 - Photos taken between 2025-06-01 and 2025-06-14 belong to 14.12 (summer trip).
 - Scanned receipts go to 13.13 into the year folder of the receipt date.
 - Everything about Example Club goes under an ID of its own.
+- Knitting patterns go to 32.11, each in a folder named after the garment.
 - Keep everything in 05.12 where it is (only matters when reorganizing).
 -->
 """
@@ -68,6 +76,42 @@ class Rules:
     @property
     def line_count(self) -> int:
         return sum(1 for line in self.text.splitlines() if line.strip())
+
+    @property
+    def entries(self) -> list[str]:
+        """The rules one by one, without their bullets; an indented line continues the rule above it."""
+        out: list[str] = []
+        for line in self.text.splitlines():
+            if not line.strip():
+                continue
+            m = BULLET_RE.match(line)
+            if m is None and out and line[:1].isspace():
+                out[-1] = f"{out[-1]} {line.strip()}"
+            else:
+                out.append(line[m.end():].strip() if m else line.strip())
+        return [e for e in out if e]
+
+    def match(self, quote: str) -> str:
+        """The whole rule a model's short quote refers to, or "" when it is none of the user's rules.
+
+        The model is asked to quote the rule it followed briefly, and it
+        usually quotes the first sentence. What the user should see, and what
+        counts as "a rule was followed", is the rule as they wrote it.
+        """
+        q = _plain(quote)
+        if len(q) < 8:
+            return ""
+        best, score = "", 0.0
+        for rule in self.entries:
+            text = _plain(rule)
+            if q in text or text in q:
+                return rule
+            words = q.split()
+            known = set(text.split())
+            ratio = sum(1 for w in words if w in known) / len(words)
+            if ratio > score:
+                best, score = rule, ratio
+        return best if score >= 0.7 else ""
 
 
 def default_rules_path() -> Path:
@@ -109,10 +153,12 @@ def rules_prompt_section(rules: Rules) -> str:
         return ""
     return (
         f"{SECTION_TITLE} when a rule matches the file, follow it. Rules take "
-        "priority over the general guidance above. A rule never lets you invent a number, a path "
-        "or a subfolder. When a rule gives a topic an ID or a folder of its own and the outline has "
-        'no ID for that topic yet, answer jd_id "new" with new_id_name: sorto creates the ID at '
-        "once. Never put such a file into another ID as a temporary home):\n"
+        "priority over the general guidance above. A rule never lets you invent a number or a "
+        "path. When a rule gives a topic an ID of its own and the outline has no ID for that topic "
+        'yet, answer jd_id "new" with new_id_name: sorto creates the ID at once. Never put such a '
+        "file into another ID as a temporary home. When a rule asks for files to be kept in "
+        "folders named after what they are, keep the existing ID and put that name in subfolder: "
+        "sorto creates the folder inside it. That is not a reason for a new ID):\n"
         f"{rules.text}\n"
     )
 

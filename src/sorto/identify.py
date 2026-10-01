@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import email
 import email.policy
+import html
 import re
 import shutil
 import subprocess
@@ -12,7 +13,7 @@ from pathlib import Path
 from sorto.config import SortoConfig
 from sorto.geo import place_of
 from sorto.junk import classify_junk
-from sorto.media import camera_signs, collect_media
+from sorto.media import camera_signs, collect_media, picture_preview
 from sorto.models import AnalysisPacket
 from sorto.util import (
     is_meaningless_name,
@@ -235,6 +236,80 @@ def extract_text(path: Path, mime: str | None) -> str:
     return ""
 
 
+MODEL_3D_EXT = {".3mf", ".stl"}
+_3MF_FIELDS = ("Title", "Description", "Designer", "Application")
+_3MF_PREVIEWS = ("metadata/plate_1.png", "metadata/thumbnail.png", "metadata/top_1.png", "thumbnail/thumbnail.png")
+_3MF_PREVIEW_MAX = 8 * 1024 * 1024
+
+
+def _zip_head(zf: zipfile.ZipFile, member: str, limit: int) -> str:
+    try:
+        with zf.open(member) as fh:
+            return fh.read(limit).decode("utf-8", errors="replace")
+    except (KeyError, OSError, RuntimeError, zipfile.BadZipFile):
+        return ""
+
+
+def model_3d_info(path: Path, *, preview: bool = True) -> tuple[dict[str, str], bytes]:
+    """What a 3D model file says about itself: (facts, the preview picture stored in it).
+
+    These files are often named badly (``plate_1.3mf``, ``final2.stl``), so
+    the name alone says little. A 3MF is a zip: its title, description and
+    part names are read in memory, and so is the preview picture slicers
+    store in it. Nothing is unpacked to disk. An STL has only its header.
+    """
+    suffix = path.suffix.lower()
+    facts: dict[str, str] = {}
+    if suffix == ".stl":
+        try:
+            with open(path, "rb") as fh:
+                head = fh.read(256)
+        except OSError:
+            return facts, b""
+        line = head.split(b"\n", 1)[0] if head.startswith(b"solid") else head[:80]
+        text = re.sub(r"[\x00-\x1f\x7f\s]+", " ", line.decode("ascii", errors="ignore")).strip()
+        text = re.sub(r"^solid\b", "", text).strip()
+        if sum(c.isalpha() for c in text) >= 3 and text.isprintable():
+            facts["header"] = text[:120]
+        return facts, b""
+    if suffix != ".3mf":
+        return facts, b""
+    picture = b""
+    try:
+        with zipfile.ZipFile(path) as zf:
+            members = {n.lower(): n for n in zf.namelist()}
+            head = _zip_head(zf, members.get("3d/3dmodel.model", ""), 256 * 1024) if "3d/3dmodel.model" in members else ""
+            for name, value in re.findall(r'<metadata\s+name="([^"]+)"[^>]*>([^<]*)</metadata>', head):
+                for _ in range(3):  # slicers escape the description more than once
+                    value = html.unescape(value)
+                value = _squash(re.sub(r"<[^>]+>", " ", value).replace("\xa0", " "))
+                if name in _3MF_FIELDS and value:
+                    facts[name.lower()] = value[:300]
+            parts = re.findall(r'<object\b[^>]*\bname="([^"]+)"', head)
+            settings = members.get("metadata/model_settings.config")
+            if settings:
+                parts += re.findall(r'<metadata\s+key="name"\s+value="([^"]+)"', _zip_head(zf, settings, 256 * 1024))
+            seen: list[str] = []
+            for part in parts:
+                part = html.unescape(part).strip()
+                if part and part not in seen:
+                    seen.append(part)
+            if seen:
+                facts["parts"] = ", ".join(seen[:12])[:400]
+            if preview:
+                wanted = [members[n] for n in _3MF_PREVIEWS if n in members]
+                wanted += [n for low, n in members.items()
+                           if low.startswith(("metadata/", "thumbnail/")) and low.endswith((".png", ".jpg", ".jpeg"))]
+                for member in wanted:
+                    if zf.getinfo(member).file_size <= _3MF_PREVIEW_MAX:
+                        with zf.open(member) as fh:
+                            picture = fh.read(_3MF_PREVIEW_MAX)
+                        break
+    except (OSError, KeyError, zipfile.BadZipFile, RuntimeError):
+        return facts, b""
+    return facts, picture
+
+
 EMAIL_HEADERS = ("From", "To", "Cc", "Subject", "Date", "List-Id")
 EMAIL_MAX_BYTES = 512 * 1024
 _HEADER_LINE_RE = re.compile(rb"^[A-Za-z][A-Za-z0-9-]{1,40}:(?:[ \t]|\r?$)")
@@ -339,6 +414,15 @@ def identify_file(
             extra["document_text"] = content
             text_preview = ""
     junk = classify_junk(src_rel, path.name)
+    model_picture = b""
+    if path.suffix.lower() in MODEL_3D_EXT and not light and size <= max_body:
+        facts, raw_picture = model_3d_info(path, preview=cfg.vision and junk is None)
+        if facts:
+            extra["model_3d"] = "; ".join(f"{key}: {value}" for key, value in facts.items())
+        if raw_picture:
+            model_picture = picture_preview(raw_picture, cfg.preview_px)
+        hex_preview = hex_preview[:64]
+        text_preview = ""
     media = collect_media(
         path,
         mime,
@@ -372,9 +456,9 @@ def identify_file(
         is_junk=junk is not None,
         junk_reason=junk.reason if junk else None,
         exif=media.exif,
-        images=media.images,
+        images=media.images or ([model_picture] if model_picture else []),
         media_kind=media.kind,
-        media_note=media.note,
+        media_note=media.note or ("model viewed the preview picture stored in the 3D file" if model_picture else ""),
         camera_signs=camera_signs(media.kind, media.exif, filename),
         gps_place=place_of(media.exif.get("GPSLatitude"), media.exif.get("GPSLongitude")),
     )

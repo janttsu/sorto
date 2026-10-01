@@ -375,6 +375,42 @@ def clean_subfolder(value: str) -> str:
     return "/".join(parts[:2])
 
 
+MAX_FOLDER_NAME = 60
+
+
+def clean_folder_name(value: str) -> str:
+    """A safe name for a new folder inside an ID, or "" when the value is not usable as one.
+
+    One path segment, with letters in it. Not a date folder (those are
+    sorto's own) and not something that looks like another ID.
+    """
+    name = (value or "").replace("\\", "/").split("/", 1)[0]
+    name = re.sub(r"[\x00-\x1f]+", " ", name)
+    name = re.sub(r"\s+", " ", name).strip()
+    if name.startswith("."):
+        return ""  # hidden, or a path trick
+    name = name.strip(" .")
+    if sum(c.isalpha() for c in name) < 2:
+        return ""
+    if YEAR_RE.match(name) or YEAR_MONTH_RE.match(name) or ID_RE.match(name) or AREA_RE.match(name):
+        return ""
+    return name[:MAX_FOLDER_NAME].strip(" .")
+
+
+def _folder_key(name: str) -> str:
+    """"Cable clip", "cable-clip" and "Cable_Clip" are the same folder."""
+    return re.sub(r"[\W_]+", "", name.casefold())
+
+
+def existing_folder_like(id_dir: Path, name: str) -> str:
+    """The folder in *id_dir* that already goes by *name* (spelling aside), or ""."""
+    key = _folder_key(name)
+    for entry in _dirs(id_dir):
+        if _folder_key(entry.name) == key and not is_git_repo(Path(entry.path)):
+            return entry.name
+    return ""
+
+
 def is_date_id(item: JDItem, date_ids: Iterable[str]) -> bool:
     """The user listed this ID as one whose photos and videos are all filed by date.
 

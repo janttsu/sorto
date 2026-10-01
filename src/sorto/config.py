@@ -73,6 +73,7 @@ reorganize_min_confidence = 0.75  # needed to move a file out of the ID it is al
 # junk_rules_path = "~/.config/sorto/junk.md" # file patterns that go straight to one folder
 allow_new_ids = true           # a new ID (next free number) in an existing category when none fits
 allow_new_categories = true    # and a new category (next free number) in an existing area when no category fits
+new_subfolders = "rules"       # a new named folder inside an ID only when one of your rules asks for it; "off" = never
 new_id_min_confidence = 0.8    # confidence needed to create one
 folder_mode = true             # look at folders as a whole first; move coherent ones together
 folder_min_files = 5           # smaller folders are sorted file by file
@@ -136,6 +137,7 @@ class SortoConfig:
     junk_rules_path: str = ""
     allow_new_ids: bool = True
     allow_new_categories: bool = True
+    new_subfolders: str = "rules"  # "rules": a named folder when a user rule asks for one; "off": never
     new_id_min_confidence: float = 0.8
     folder_mode: bool = True
     folder_min_files: int = 5
@@ -237,6 +239,7 @@ class SortoConfig:
             f'junk_rules_path = "{self.junk_file}"\n'
             f"allow_new_ids = {b(self.allow_new_ids)}\n"
             f"allow_new_categories = {b(self.allow_new_categories)}\n"
+            f'new_subfolders = "{self.new_subfolders}"\n'
             f"new_id_min_confidence = {self.new_id_min_confidence}\n"
             f"folder_mode = {b(self.folder_mode)}\n"
             f"folder_min_files = {self.folder_min_files}\n"
@@ -535,6 +538,7 @@ def load_config(
     cfg.reorganize_min_confidence = max(0.0, min(1.0, float(cfg.reorganize_min_confidence)))
     cfg.new_id_min_confidence = max(0.0, min(1.0, float(cfg.new_id_min_confidence)))
     cfg.folder_min_confidence = max(0.0, min(1.0, float(cfg.folder_min_confidence)))
+    cfg.new_subfolders = "off" if str(cfg.new_subfolders).strip().lower() in ("off", "never", "false") else "rules"
     cfg.date_folders = str(cfg.date_folders).strip().lower()
     if cfg.date_folders not in ("own", "all", "off"):
         cfg.date_folders = "own"

@@ -79,7 +79,8 @@ To protect a sync folder, exclude it (`--exclude "05.11*/**"`) or write a rule s
 - **Rules can be about anything the model can see:** names, file types, the text inside documents, email senders and subjects, photo dates, GPS positions, camera models and so on.
 - **Rules come after the outline in the system prompt and take priority** over the model's general judgement. They cannot widen what sorto may do: the model still never chooses a number or a path, and uncertain files still stay where they are.
 - **A rule can ask for an ID of its own.** "Everything about X goes under its own ID" makes the model answer with a new ID for the first such file, if the target has none for X yet. sorto then names, places and numbers it as any other new ID (see [It respects your existing organization](#it-respects-your-existing-organization)), and later files go to the same ID. The file is not parked in another ID meanwhile. This reaches only files the model looks at one by one: files that move with their folder as a whole are not checked against the rules individually.
-- **You can see which rule was used.** When the model follows a rule, it quotes it, and the TUI shows it on a `Rule:` line.
+- **You can see which rule was used.** When the model follows a rule, it quotes it briefly. sorto finds the rule that quote comes from and shows it on the `Rule:` line in full, as you wrote it, in the TUI and in the run log.
+- **A rule can ask for named folders.** "Knitting patterns go to 32.11, each in a folder named after the garment" makes the model name a folder for each file, and sorto creates it inside the ID: `32.11 Patterns/Wool socks/`. This is the only way a new folder with a name is made, and only when the rule the model quotes really is one of yours. sorto decides what is a usable name (one folder level; not a date folder, not something that looks like an ID), uses a folder that already goes by that name whatever its spelling (`wool-socks`), and logs each folder it creates. When reorganizing, a file in the root of its ID moves into the folder its rule asks for. Without such a rule a folder the model suggests is not created; the file goes to the ID itself and the log says so. `new_subfolders = "off"` turns this off.
 - **Commented lines are ignored.** Text inside `<!-- -->` is not sent to the model.
 - **Edits apply while sorto runs.** The file is re-read every minute, and changed rules are used from the next file on. The log shows `re-read … rules.md: N rule line(s)`, and the title bar shows the new count. Rules come after the outline in the prompt, so the model keeps its cached outline and only reads the rules again.
 - **`sorto rules`** creates a commented template with examples and prints the active rules. `sorto rules /path/to/jd-root` also warns about IDs that do not exist in that tree. `sorto doctor` checks the same.
@@ -121,6 +122,15 @@ How this works in practice:
 - **Tuning.** `preview_px` and `video_frames` set the preview size and the number of frames.
 - **Phone names stay.** Phone camera names such as `20240102_030405.jpg` carry the capture time, so they are never renamed.
 
+### 3D model files
+
+Files for 3D printing are often named badly (`plate_1.3mf`, `final2.stl`), so the name alone says little. sorto reads what the file says about itself, in memory, without unpacking anything:
+
+- **3MF:** the title, description and part names, and the preview picture that slicers store in the file. The picture is sent to the model like a photo, so it sees the object.
+- **STL:** the header text or the `solid` name, when there is one. An STL holds nothing else.
+
+`--no-vision` leaves the picture out; the text is still used.
+
 ### Your own photos and videos go into `YYYY/MM`
 
 Photos and videos you shot yourself are always filed by capture date: `51.11 Photos/2024/06/20230815_102030.jpg`. This holds for every ID the model picks, for new IDs, for files that arrive inside a folder, and when reorganizing.
@@ -144,7 +154,7 @@ sorto reads the structure of the target at run time. Nothing about any particula
 
 - **Areas** `NN-NN Name`, **categories** `NN Name` and **IDs** `NN.NN Name` are all discovered from the target, including IDs that sit directly in the root, such as `05.11 Shared folder`.
 - **JDex notes** are read from every `*JDex*.md` in a `NN.00` folder or in the root. A line like `` - `13.13` Invoices — all personal bills `` becomes that ID's description in the model's prompt.
-- **Existing subfolders** of each ID are listed for the model, except year and year-month folders: for those the outline only says that the ID has them (`[has year folders (YYYY)]`), not which years exist. Date folders are how files are stored, not what an ID is about, and a model takes "already has a 2023 folder" as proof that photos from 2023 belong to a trip made in 2024. sorto only files into subfolders that already exist. It creates a new year or year-month folder (`2025`, `2025-03`) only when that ID already uses that pattern. Your own photos and videos are the exception: they always get `YYYY/MM`.
+- **Existing subfolders** of each ID are listed for the model, except year and year-month folders: for those the outline only says that the ID has them (`[has year folders (YYYY)]`), not which years exist. Date folders are how files are stored, not what an ID is about, and a model takes "already has a 2023 folder" as proof that photos from 2023 belong to a trip made in 2024. sorto only files into subfolders that already exist, unless one of your rules asks for named folders (see [Your own rules](#your-own-rules)). It creates a new year or year-month folder (`2025`, `2025-03`) only when that ID already uses that pattern. Your own photos and videos are the exception: they always get `YYYY/MM`.
 - The model picks an **ID** and sorto builds the path itself. The model can never invent an area, a number or a path. `NN.00` index folders are never used. `NN.01` inboxes are used when the category is clear but no specific ID fits a one-off file.
 - **New IDs, numbered by sorto.** When no existing ID fits and the file clearly starts a topic of its own, the model may ask for a new ID. It names only an existing **category** and a **name**. sorto then:
   1. asks the model once more, with only the categories and their IDs in view, which category the new topic belongs in (at temperature 0). This focused answer decides. Low confidence keeps the file where it is; `none` leads to a new category, see below. In testing, both local models put a workout log under "Code" when choosing inside the full classification, but "Health" when asked on its own;

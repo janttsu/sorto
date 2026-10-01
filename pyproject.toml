@@ -1,6 +1,6 @@
 [project]
 name = "sorto"
-version = "0.1.0b1"
+version = "0.1.0b2.dev0"
 description = "File inbox sorter: a local LLM files each file into your existing Johnny.Decimal tree, with a live TUI"
 readme = "README.md"
 requires-python = ">=3.11"

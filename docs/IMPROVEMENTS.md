@@ -281,3 +281,6 @@ with the archive as TARGET.
   copying every byte. A normal copy remains the fallback for other file
   systems.
 - Git repositories are never touched.
+- A rule can ask for named folders inside an ID, and the rule a file followed
+  is shown in full.
+- 3D model files are read: 3MF title, parts and preview picture, STL header.
