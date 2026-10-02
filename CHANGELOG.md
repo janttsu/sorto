@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Ollama is spoken to through its own `/api/chat`: the model stays loaded for
+  as long as sorto runs (`keep_alive = "run"`) and is let go `keep_alive_after`
+  the run. `num_ctx` and `num_gpu` can be set. Other servers keep the
+  OpenAI-compatible endpoint.
 - A rule can ask for files to be kept in folders named after what they are;
   sorto creates such a folder inside the ID. `new_subfolders = "off"` turns
   it off.

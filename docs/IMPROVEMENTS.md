@@ -59,12 +59,17 @@ Proposals:
   `OLLAMA_NUM_PARALLEL` to 2 is *not* a good alternative: Ollama multiplies
   the KV cache by the number of slots. 2 × 64k spills to the CPU, measured
   at 12.5 tok/s instead of 24.
-- **Use Ollama's native `/api/chat` when the server is Ollama.** It honours
-  `keep_alive` per request (the OpenAI endpoint ignores it; tested) and
-  `options.num_ctx` / `num_gpu`. sorto could then keep its model loaded for
-  as long as a run lasts, without changing the server-wide setting.
-- **`OLLAMA_KEEP_ALIVE=-1`** in the user service keeps the model loaded
-  forever. The cost is ~22 GB of page cache held for the 35B.
+- **Ollama's native `/api/chat`: done.** sorto uses it whenever the server is
+  Ollama. It honours `keep_alive` per request (the OpenAI endpoint ignores it;
+  tested), so the model stays loaded for as long as a run lasts and is let go
+  `keep_alive_after` the run. `num_ctx` and `num_gpu` can be set too. One thing
+  learned on the way: Ollama keeps the last `keep_alive` it was given for a
+  loaded model, so "back to the server's default" has to be an explicit value.
+- **`OLLAMA_KEEP_ALIVE=-1`** in the server's environment keeps every model
+  loaded for good, for all clients. sorto no longer needs it; it is still the
+  way to go when other tools should find the model loaded too. The cost is the
+  model's memory held for as long as the server runs (about 22 GB of page
+  cache for the 35B).
 
 ### 1.2 Shorter answers: proposal
 
@@ -281,6 +286,7 @@ with the archive as TARGET.
   copying every byte. A normal copy remains the fallback for other file
   systems.
 - Git repositories are never touched.
+- On Ollama the native API is used: the model stays loaded for the run.
 - A rule can ask for named folders inside an ID, and the rule a file followed
   is shown in full.
 - 3D model files are read: 3MF title, parts and preview picture, STL header.

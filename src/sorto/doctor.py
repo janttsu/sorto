@@ -117,9 +117,15 @@ def run_doctor(
     except NotLocalError as e:
         checks.append(Check("LLM is local", False, str(e)))
         return checks
-    client = OpenAICompatClient(base_url=url, model=model, timeout_sec=8.0)
+    # keep_alive "": a check is not a run, so it does not ask the server to hold the model
+    client = OpenAICompatClient(base_url=url, model=model, timeout_sec=8.0, api=cfg.llm_api, keep_alive="")
     ok, detail = client.health()
     checks.append(Check("LLM model", ok, f"{model} @ {url} — {detail}"))
+    if ok and client.is_ollama():
+        held = {"run": f"loaded while sorto runs, then {cfg.keep_alive_after or '5m'}", "": "the server's own timeout"}
+        checks.append(Check("LLM API", True, f"Ollama's own /api/chat; keep_alive: {held.get(cfg.keep_alive, cfg.keep_alive)}"))
+    elif ok:
+        checks.append(Check("LLM API", True, "OpenAI-compatible /v1 (keep_alive is the server's own)"))
     models = list(dict.fromkeys([model, *cfg.models]))
     if warm and ok:
         checks.extend(warm_models(cfg, models, default=model, url_override=llm_url))
@@ -145,7 +151,7 @@ def warm_models(
         mcfg = config_for_model(cfg, name)
         url = url_override or mcfg.llm_url
         try:
-            client = OpenAICompatClient(base_url=url, model=name, timeout_sec=600.0, max_retries=0)
+            client = OpenAICompatClient(base_url=url, model=name, timeout_sec=600.0, max_retries=0, keep_alive="")
         except NotLocalError as e:
             checks.append(Check(f"model {name}", False, str(e)))
             continue
@@ -171,7 +177,7 @@ def warm_models(
             )
         )
     if len(order) > 1 and timings:
-        probe = OpenAICompatClient(base_url=url_override or cfg.llm_url, model=default, timeout_sec=8.0)
+        probe = OpenAICompatClient(base_url=url_override or cfg.llm_url, model=default, timeout_sec=8.0, keep_alive="")
         resident = [m for m in order if m in probe.loaded_models()]
         if len(resident) == len(order):
             checks.append(Check("models in memory", True, f"all {len(order)} stay loaded; switching is instant"))

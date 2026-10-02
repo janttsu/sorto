@@ -317,7 +317,10 @@ class Engine:
         self.cfg.context_window = cfg.context_window
         self.cfg.timeout_sec = cfg.timeout_sec
         self.cfg.llm_profile_source = cfg.llm_profile_source
-        self.llm = llm
+        previous, self.llm = self.llm, llm
+        release = getattr(previous, "release", None)
+        if release is not None:
+            release()  # the model that was kept loaded for the run is no longer sorto's to hold
         self.reload_index()
         self.emit("engine", f"model → {model} (from the next file; loading it now)")
         self.warm_up()
@@ -514,6 +517,18 @@ class Engine:
             pass
         if self.run_log is not None:
             self.run_log.close()
+        self._release_models()
+
+    def _release_models(self) -> None:
+        """The run is over: models kept loaded for it go back to the server's own unload timeout."""
+        structure = self._structure[1] if self._structure else None
+        for llm in (self.llm, structure, self._structure_given):
+            release = getattr(llm, "release", None)
+            if release is not None:
+                try:
+                    release()
+                except Exception:
+                    log.exception("could not release the model")
 
     def run_until_idle(self, timeout: float = 120.0) -> Snapshot:
         """Start, wait until --once would exit (or timeout), then stop."""
@@ -1863,9 +1878,11 @@ def _has_subfolders(path: Path) -> bool:
 
 
 def _fit_context(cfg: SortoConfig, llm: Any) -> None:
-    """Use a smaller context baked into the model tag, so the prompt fits it."""
+    """Use a smaller context baked into the model tag, or asked for with num_ctx, so the prompt fits it."""
     probe = getattr(llm, "server_context_window", None)
     ctx = probe() if probe else None
+    if cfg.num_ctx:
+        ctx = cfg.num_ctx  # what sorto asks the server for wins over the tag's own value
     if ctx and ctx < cfg.context_window:
         cfg.context_window = max(4096, ctx)
 
@@ -1883,6 +1900,11 @@ def make_llm(cfg: SortoConfig, *, fake: bool = False) -> Any:
         timeout_sec=cfg.timeout_sec,
         reasoning_effort=cfg.reasoning_effort,
         max_retries=cfg.max_retries,
+        api=cfg.llm_api,
+        keep_alive=cfg.keep_alive,
+        keep_alive_after=cfg.keep_alive_after,
+        num_ctx=cfg.num_ctx,
+        num_gpu=cfg.num_gpu,
     )
 
 

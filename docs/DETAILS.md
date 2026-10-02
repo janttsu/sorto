@@ -226,7 +226,10 @@ sorto reads `num_ctx` from the tag and sizes its prompt to fit. 16k is enough: t
 
 ### Keeping the model hot
 
-- **The model stays loaded** for `OLLAMA_KEEP_ALIVE` after the last request (30 min in this setup). Ollama's OpenAI endpoint ignores a per-request `keep_alive`; this was tested.
+- **The model stays loaded for as long as sorto runs.** When the server is Ollama, sorto talks to its own `/api/chat` instead of the OpenAI-compatible endpoint, because only that one honours `keep_alive` per request (the OpenAI endpoint ignores it; tested). Every request asks the model to stay loaded, so a pause, a long `--confirm` wait or a quiet hour in follow mode no longer unloads it. No server-wide setting is needed.
+- **When the run ends the model is let go.** sorto sets its unload timer to `keep_alive_after` (5 minutes, Ollama's own default). It has to be a real value: Ollama keeps the last `keep_alive` it was given for a loaded model, and a request without one does not bring the server's default back (tested). A model that was already loaded for good before sorto used it is left that way, and stopping sorto never loads a model.
+- **Settings** (`[llm]`): `keep_alive = "run"` is the default. `"45m"` or a number of seconds asks for that on every request and leaves the timer alone at the end; `"-1"` keeps the model for good; `""` sends nothing, so the server's `OLLAMA_KEEP_ALIVE` applies. `api = "openai"` forces the OpenAI-compatible endpoint, `"ollama"` the native one; the default `"auto"` asks the server once.
+- **Other servers** (llama.cpp, LM Studio) get the OpenAI-compatible `/v1/chat/completions` as before.
 - **The prompt cache matters more than the loaded model.** The Johnny.Decimal outline is the same for every file, and once it is cached a file costs its own packet plus the answer (about 10 s on the 35B). If anything else uses the same Ollama slot in between, such as Grok Build or another model, the next file has to re-read the whole outline: about 40 s on the 35B (up to 3 minutes while the machine is busy), about 6 s on the 9B.
 - **sorto warms up at start.** A one-token request with the full system prompt loads the model and fills the cache while sorto is still scanning. It does the same after a model switch.
 - **Your rules come after the outline.** Editing `rules.md` therefore only re-reads the rules, not the whole outline.
@@ -241,7 +244,7 @@ sorto reads `num_ctx` from the tag and sizes its prompt to fit. 16k is enough: t
 | `max_retries` | `max_retries` |
 | `top_p` | `top_p` |
 
-This way both tools share one loaded model with one KV-cache size. sorto never sends `num_ctx`, so it never forces Ollama to reload the model under Grok. Grok's chat temperature is *not* reused, because sorto uses 0.6 for steadier answers.
+This way both tools share one loaded model with one KV-cache size. By default sorto sends no `num_ctx`, so it never forces Ollama to reload the model under Grok. On Ollama you can ask for one with `[llm] num_ctx = 16384` (and `num_gpu` for the number of layers on the GPU); this replaces a custom model tag when sorto is the only user of the model, and it applies to every model sorto uses, so keep tags when two models need different values. Grok's chat temperature is *not* reused, because sorto uses 0.6 for steadier answers.
 
 Why these defaults:
 

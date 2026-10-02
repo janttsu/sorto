@@ -278,12 +278,49 @@ def parse_new_category_answer(text: str) -> tuple[str, str, float, str]:
     return (m.group(0) if m else "none"), name, confidence, str(data.get("reason") or "")[:300]
 
 
+def _native_message(message: dict[str, Any]) -> dict[str, Any]:
+    """An OpenAI-style message in Ollama's own shape: text in ``content``, pictures in ``images``."""
+    content = message.get("content")
+    if not isinstance(content, list):
+        return {"role": message.get("role", "user"), "content": content or ""}
+    text = "\n".join(p.get("text", "") for p in content if p.get("type") == "text")
+    images = []
+    for part in content:
+        url = (part.get("image_url") or {}).get("url", "") if part.get("type") == "image_url" else ""
+        if url.startswith("data:") and "," in url:
+            images.append(url.split(",", 1)[1])
+    out: dict[str, Any] = {"role": message.get("role", "user"), "content": text}
+    if images:
+        out["images"] = images
+    return out
+
+
+def keep_alive_value(setting: str) -> int | str | None:
+    """What to send as ``keep_alive``: None leaves it to the server.
+
+    "run" keeps the model loaded for as long as sorto runs (sent as -1; when
+    sorto stops it sets the timer to ``keep_alive_after``). A bare number is
+    seconds, anything else an Ollama duration such as "45m".
+    """
+    setting = (setting or "").strip().lower()
+    if setting in ("", "server", "default"):
+        return None
+    if setting == "run":
+        return -1
+    return int(setting) if re.fullmatch(r"-?\d+", setting) else setting
+
+
 class OpenAICompatClient:
-    """Chat-completions client for a local server (Ollama, llama.cpp, LM Studio).
+    """Chat client for a local server (Ollama, llama.cpp, LM Studio).
 
     Refuses non-loopback URLs, ignores proxy environment variables, and turns
     off model "thinking" (``reasoning_effort: none``) so a reasoning model such
     as Qwen 3.6 spends its budget on the JSON answer instead of hidden thoughts.
+
+    An Ollama server is spoken to through its own ``/api/chat``: unlike its
+    OpenAI-compatible endpoint, that one honours ``keep_alive`` per request
+    and takes ``num_ctx`` / ``num_gpu``. Any other server gets the
+    OpenAI-compatible ``/v1/chat/completions``.
     """
 
     def __init__(
@@ -298,6 +335,11 @@ class OpenAICompatClient:
         timeout_sec: float = 1800.0,
         reasoning_effort: str = "none",
         max_retries: int = 1,
+        api: str = "auto",
+        keep_alive: str = "run",
+        keep_alive_after: str = "5m",
+        num_ctx: int = 0,
+        num_gpu: int = -1,
     ):
         self.base_url = ensure_local_url(base_url.rstrip("/"))
         self.model = model
@@ -313,6 +355,14 @@ class OpenAICompatClient:
         self.last_tokens_est: int = 0
         self._send_reasoning = bool(reasoning_effort)
         self._send_images = True
+        self.keep_alive = keep_alive
+        self.keep_alive_after = keep_alive_after
+        self._held_before: bool | None = None  # the model was already loaded for good before sorto asked
+        self.num_ctx = max(0, int(num_ctx or 0))  # 0: the model's own context length
+        self.num_gpu = int(num_gpu if num_gpu is not None else -1)  # -1: the server decides
+        api = (api or "auto").strip().lower()
+        # None: not known yet, asked on the first request.
+        self._native: bool | None = {"ollama": True, "openai": False}.get(api)
 
     def _headers(self) -> dict[str, str]:
         return {
@@ -324,7 +374,110 @@ class OpenAICompatClient:
         # trust_env=False: never route through HTTP(S)_PROXY to another host.
         return httpx.Client(timeout=timeout, trust_env=False, follow_redirects=False)
 
+    def is_ollama(self) -> bool:
+        """The server is Ollama (it answers ``/api/version``). Asked once; a server that is down is asked again."""
+        if self._native is None:
+            try:
+                with self._client(httpx.Timeout(5.0, connect=3.0)) as client:
+                    r = client.get(self._native_url("/api/version"))
+                self._native = r.status_code == 200 and "version" in r.json()
+            except (httpx.HTTPError, ValueError, TypeError):
+                return False
+        return self._native
+
+    def _post_native(self, payload: dict[str, Any], *, use_json_format: bool) -> str:
+        options: dict[str, Any] = {"temperature": payload.get("temperature", self.temperature)}
+        if payload.get("top_p") is not None:
+            options["top_p"] = payload["top_p"]
+        if payload.get("max_tokens"):
+            options["num_predict"] = payload["max_tokens"]
+        if self.num_ctx:
+            options["num_ctx"] = self.num_ctx
+        if self.num_gpu >= 0:
+            options["num_gpu"] = self.num_gpu
+        body: dict[str, Any] = {
+            "model": payload["model"],
+            "messages": [_native_message(m) for m in payload.get("messages", [])],
+            "stream": False,
+            "options": options,
+        }
+        if use_json_format:
+            body["format"] = "json"
+        if self._send_reasoning:
+            body["think"] = self.reasoning_effort != "none"
+        keep = keep_alive_value(self.keep_alive)
+        if keep is not None:
+            body["keep_alive"] = keep
+        if keep == -1 and self._held_before is None:
+            self._held_before = self._loaded_for_good()
+        timeout = httpx.Timeout(self.timeout_sec, connect=5.0)
+        with self._client(timeout) as client:
+            resp = client.post(self._native_url("/api/chat"), json=body)
+        if resp.status_code == 404 and "model" not in resp.text.lower():
+            self._native = False  # something else answers on this port: use the OpenAI-compatible endpoint
+            return self._post(payload, use_json_format=use_json_format)
+        if resp.status_code == 400 and self._send_reasoning and "think" in resp.text.lower():
+            self._send_reasoning = False
+            return self._post_native(payload, use_json_format=use_json_format)
+        if resp.status_code in (400, 500) and _has_images(payload) and self._send_images:
+            self._send_images = False
+            self.last_error = f"images rejected by the server: {resp.text[:200]}"
+            return self._post_native(_strip_images(payload), use_json_format=use_json_format)
+        if resp.status_code >= 400:
+            raise LLMError(f"LLM HTTP {resp.status_code}: {resp.text[:300]}")
+        data = resp.json()
+        try:
+            message = data["message"]
+            content = str(message.get("content") or "")
+        except (KeyError, TypeError, AttributeError) as e:
+            raise LLMError(f"unexpected LLM response shape: {data!r}"[:400]) from e
+        if not content.strip() and message.get("thinking"):
+            raise LLMError(
+                "model spent its whole token budget thinking; raise max_tokens "
+                "or keep reasoning_effort = \"none\""
+            )
+        try:
+            self.last_tokens_est = int(data.get("prompt_eval_count") or 0) + int(data.get("eval_count") or 0)
+        except (TypeError, ValueError):
+            pass
+        return content
+
+    def _loaded_for_good(self) -> bool:
+        """The server already holds this model with no unload time (someone set it to stay loaded)."""
+        expires = str(self.loaded_models().get(self.model, {}).get("expires_at") or "")
+        try:
+            return int(expires[:4]) > time.gmtime().tm_year + 1
+        except ValueError:
+            return False
+
+    def release(self) -> None:
+        """A run is over: stop holding the model. It unloads ``keep_alive_after`` from now.
+
+        Only for ``keep_alive = "run"``. Ollama keeps the last keep_alive it
+        was given for a loaded model (a request without one does not bring
+        the server's default back; tested), so the timer has to be set to a
+        real value. A model that was loaded for good before sorto used it is
+        left that way, and one that is not loaded any more is not touched, so
+        stopping sorto never loads a model.
+        """
+        if keep_alive_value(self.keep_alive) != -1 or not self._native or self._held_before:
+            return
+        after = keep_alive_value(self.keep_alive_after)
+        if after is None:
+            after = "5m"  # Ollama's own default
+        if after == -1:
+            return
+        try:
+            if self.model not in self.loaded_models():
+                return
+            with self._client(httpx.Timeout(15.0, connect=3.0)) as client:
+                client.post(self._native_url("/api/generate"), json={"model": self.model, "keep_alive": after})
+        except (httpx.HTTPError, ValueError, TypeError):
+            pass
+
     def _post(self, payload: dict[str, Any], *, use_json_format: bool) -> str:
+        if self.is_ollama():
+            return self._post_native(payload, use_json_format=use_json_format)
         body = dict(payload)
         if use_json_format:
             body["response_format"] = {"type": "json_object"}

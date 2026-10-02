@@ -53,6 +53,11 @@ top_p = 0.95
 max_tokens = 800
 reasoning_effort = "none"      # Qwen 3.6 thinks by default; "none" keeps answers fast
 # timeout_sec = 1800
+# api = "auto"                 # Ollama's own API when the server is Ollama; "openai" or "ollama" forces one
+# keep_alive = "run"           # Ollama: keep the model loaded while sorto runs; "" = the server's timeout; "45m"
+# keep_alive_after = "5m"      # with "run": unload this long after the run ended ("-1" = leave it loaded)
+# num_ctx = 0                  # Ollama: context length to request (0 = the model's own; a different value reloads it)
+# num_gpu = -1                 # Ollama: layers on the GPU (-1 = the server decides)
 
 [run]
 identify_workers = 4
@@ -99,6 +104,11 @@ class SortoConfig:
     # decides them, also when a small one reads the files. "" = the analysis model decides.
     structure_model: str = DEFAULT_LLM_MODEL
     llm_api_key: str = ""
+    llm_api: str = "auto"  # "auto": Ollama's own API when the server is Ollama; "openai" / "ollama" force one
+    keep_alive: str = "run"  # Ollama: "run" = loaded while sorto runs; "" = the server's timeout; or "45m", "-1"
+    keep_alive_after: str = "5m"  # Ollama, with "run": how long the model stays loaded once the run has ended
+    num_ctx: int = 0  # Ollama: context length to request; 0 = the model's own (no reload under other clients)
+    num_gpu: int = -1  # Ollama: layers on the GPU; -1 = the server decides
     context_window: int = DEFAULT_CONTEXT_WINDOW
     temperature: float = 0.6
     top_p: float = 0.95
@@ -215,6 +225,11 @@ class SortoConfig:
             f'reasoning_effort = "{self.reasoning_effort}"\n'
             f"timeout_sec = {self.timeout_sec}\n"
             f"max_retries = {self.max_retries}\n"
+            f'api = "{self.llm_api}"\n'
+            f'keep_alive = "{self.keep_alive}"\n'
+            f'keep_alive_after = "{self.keep_alive_after}"\n'
+            f"num_ctx = {self.num_ctx}\n"
+            f"num_gpu = {self.num_gpu}\n"
             f"\n[run]\n"
             f"identify_workers = {self.identify_workers}\n"
             f"scan_interval = {self.scan_interval}\n"
@@ -339,6 +354,11 @@ LLM_KEYS = {
     "timeout_sec": "timeout_sec",
     "max_retries": "max_retries",
     "structure_model": "structure_model",
+    "api": "llm_api",
+    "keep_alive": "keep_alive",
+    "keep_alive_after": "keep_alive_after",
+    "num_ctx": "num_ctx",
+    "num_gpu": "num_gpu",
 }
 RUN_KEYS = {
     f.name
