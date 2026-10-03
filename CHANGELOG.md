@@ -9,10 +9,11 @@
   counts. Printed at the end of the run and written to the run log, so a run
   that handled no files explains itself.
 - Unpacked software is kept whole like a git repository: a `squashfs-root`
-  folder, a folder with an `AppRun` file (an extracted AppImage) or a copied
-  Unix root (`usr/lib` with `usr/bin` or `usr/share`) is never walked into or
-  filed into. Before, its libraries and icons were filed one by one all over
-  the archive.
+  folder, a folder with an `AppRun` file and a `usr/` folder (an extracted
+  AppImage) or a copied Unix root (`usr/lib` with `usr/bin` or `usr/share`)
+  is never walked into or filed into. Before, its libraries and icons were
+  filed one by one all over the archive. A Johnny.Decimal area, category or
+  ID folder never counts as one, whatever stray files are in it.
 - A file that is no longer in the source when its turn comes (moved or
   deleted by someone else) is counted as gone, not as an error. The run log
   gives one line for all of them instead of one per file. Older indexes are

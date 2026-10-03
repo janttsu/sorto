@@ -68,16 +68,28 @@ def is_git_repo(path: Path) -> bool:
         return False
 
 
+# "10-19 Life", "13 Money", "13.13 Invoices": folders of the archive's own structure.
+JD_FOLDER_RE = re.compile(r"^(?:\d{2}-\d{2}|\d{2}|\d{2}\.\d{2})\s")
+
+
 def is_software_tree(path: Path) -> bool:
     """*path* is an unpacked software image: an extracted AppImage or a copied Unix root.
 
     Thousands of libraries, icons and configs that only work together where
     they are. Filing them one by one spreads a program across the archive.
+    A Johnny.Decimal area, category or ID folder never is one, whatever
+    stray files ended up in it: an ``AppRun`` filed into an ID must not
+    close the whole ID. ``AppRun`` alone is not enough either; the extracted
+    image has its ``usr/`` next to it.
     """
+    if JD_FOLDER_RE.match(path.name):
+        return False
     try:
-        if path.name == "squashfs-root" or (path / "AppRun").exists():
+        if path.name == "squashfs-root":
             return True
         usr = path / "usr"
+        if (path / "AppRun").is_file() and usr.is_dir():
+            return True
         return (usr / "lib").is_dir() and ((usr / "bin").is_dir() or (usr / "share").is_dir())
     except OSError:
         return False

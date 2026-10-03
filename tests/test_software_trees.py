@@ -35,8 +35,11 @@ def test_what_counts_as_a_software_package(tmp_path: Path) -> None:
     extracted = tmp_path / "squashfs-root"
     extracted.mkdir()
     runner = tmp_path / "editor"
-    runner.mkdir()
+    (runner / "usr").mkdir(parents=True)
     (runner / "AppRun").write_text("#!/bin/sh\n", encoding="utf-8")
+    lone = tmp_path / "scripts"
+    lone.mkdir()
+    (lone / "AppRun").write_text("#!/bin/sh\n", encoding="utf-8")  # AppRun with no usr/ next to it
     rootfs = tmp_path / "old-laptop-root"
     for d in ("usr/lib", "usr/share"):
         (rootfs / d).mkdir(parents=True)
@@ -44,6 +47,12 @@ def test_what_counts_as_a_software_package(tmp_path: Path) -> None:
     (notes / "usr").mkdir(parents=True)  # a folder called usr alone is not a system tree
     assert is_software_tree(extracted) and is_software_tree(runner) and is_software_tree(rootfs)
     assert not is_software_tree(notes) and not is_software_tree(tmp_path / "missing")
+    assert not is_software_tree(lone)
+    for jd_folder in ("10-19 Life", "13 Money", "13.13 Invoices"):  # the archive's own folders never are
+        (tmp_path / jd_folder / "usr" / "lib").mkdir(parents=True)
+        (tmp_path / jd_folder / "usr" / "bin").mkdir()
+        (tmp_path / jd_folder / "AppRun").write_text("#!/bin/sh\n", encoding="utf-8")
+        assert not is_software_tree(tmp_path / jd_folder)
     (tmp_path / "repo" / ".git").mkdir(parents=True)
     assert kept_whole(tmp_path / "repo") == "git repository" and kept_whole(rootfs) == "software package"
     assert kept_whole(notes) == ""
@@ -90,6 +99,21 @@ def test_the_last_check_before_a_move_names_the_package(inbox: Path, target: Pat
         )
     finally:
         engine.db.close()
+
+
+def test_a_stray_apprun_filed_into_an_id_does_not_close_the_id(inbox: Path, target: Path, cfg) -> None:
+    """Pieces of a program filed one by one earlier, among them its AppRun, sit in an ID's root."""
+    (target / INVOICES / "AppRun").write_text("#!/bin/sh\n", encoding="utf-8")
+    (target / INVOICES / "usr" / "lib").mkdir(parents=True)
+    (target / INVOICES / "usr" / "bin").mkdir()
+    (inbox / "invoice-march.txt").write_text("Invoice", encoding="utf-8")
+    engine = make_engine(cfg)
+    try:
+        assert engine._repo_in_the_way("invoice-march.txt", f"{INVOICES}/invoice-march.txt") == ""
+    finally:
+        engine.db.close()
+    make_engine(cfg).run_until_idle(timeout=30)
+    assert (target / INVOICES / "invoice-march.txt").is_file()
 
 
 def test_reorganizing_never_reaches_into_a_package(target: Path) -> None:
