@@ -16,6 +16,7 @@ ALL_STATUSES = frozenset(
         "skipped",
         "error",
         "needs_user",
+        "gone",  # no longer in the source when its turn came (moved or deleted by someone else)
     }
 )
 
@@ -170,6 +171,7 @@ class Counts:
     skipped: int = 0
     error: int = 0
     needs_user: int = 0
+    gone: int = 0
     pending: int = 0
     total: int = 0
 
@@ -183,7 +185,8 @@ class Counts:
         self.skipped = raw.get("skipped", 0)
         self.error = raw.get("error", 0)
         self.needs_user = raw.get("needs_user", 0)
-        self.total = sum(raw.values())
+        self.gone = raw.get("gone", 0)
+        self.total = sum(raw.values()) - self.gone  # files that left the source are not sorto's work
 
 
 @dataclass

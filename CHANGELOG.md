@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- A file that is no longer in the source when its turn comes (moved or
+  deleted by someone else) is counted as gone, not as an error. The run log
+  gives one line for all of them instead of one per file. Older indexes are
+  converted when opened.
 - Ollama is spoken to through its own `/api/chat`: the model stays loaded for
   as long as sorto runs (`keep_alive = "run"`) and is let go `keep_alive_after`
   the run. `num_ctx` and `num_gpu` can be set. Other servers keep the

@@ -131,6 +131,8 @@ class Database:
         for name in ("own_media", "intact"):
             if name not in cols:
                 self.conn.execute(f"ALTER TABLE folders ADD COLUMN {name} INTEGER")
+        # sorto <= 0.1.0b1 counted files that had left the source as errors.
+        self.conn.execute("UPDATE files SET status='gone', error=NULL WHERE status='error' AND error='source missing'")
 
     def checkpoint(self) -> None:
         """Fold the write-ahead log into index.sqlite, so that file alone is the index."""
@@ -243,6 +245,7 @@ class Database:
                 return file_id, False
             if row["status"] == "error" and unchanged:
                 return file_id, False
+            # "gone" falls through: a file that is back in the source is new work.
             if row["status"] in ("identifying", "analyzing", "planned", "moving") and unchanged:
                 return file_id, False
             if row["status"] == "discovered" and unchanged:

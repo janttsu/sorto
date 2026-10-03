@@ -300,7 +300,7 @@ def cmd_status(args: argparse.Namespace) -> int:
         runs = sorted(cfg.runs_dir.glob("run-*.log"))
         if runs:
             print(f"last log: {runs[-1]}  ({len(runs)} run log(s) in {cfg.runs_dir})")
-        for name in ("total", "discovered", "planned", "done", "skipped", "needs_user", "error", "pending"):
+        for name in ("total", "discovered", "planned", "done", "skipped", "needs_user", "error", "gone", "pending"):
             print(f"{name + ':':<12}{getattr(c, name)}")
     finally:
         db.close()

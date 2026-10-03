@@ -804,9 +804,11 @@ class Engine:
         try:
             self.db.update(file_id, status="identifying")
             if not path.is_file():
-                self.db.update(file_id, status="error", error="source missing")
-                self.emit("error", f"missing {src_rel}", file_id)
-                self._note_run("error", f"{src_rel}: the file is no longer in the source")
+                # Moved or deleted by someone else since the scan: not an error, nothing to do.
+                self.db.update(file_id, status="gone", error=None)
+                log.info("gone %s: no longer in the source", src_rel)
+                if self.run_log is not None:
+                    self.run_log.gone(src_rel)
                 self._release(file_id)
                 return
             # Files that go to the junk folder by rule, or move with their folder, need no

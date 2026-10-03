@@ -26,6 +26,7 @@ TOTALS = {
     "in_place": "already in place",
     "deleted": "deleted",
     "error": "with an error",
+    "gone": "no longer in the source",
 }
 WIDTH = 13
 
@@ -44,6 +45,7 @@ class RunLog:
         self.path, self._fp = _open_new(directory, f"run-{started:%Y-%m-%d_%H-%M-%S}")
         self._lock = threading.Lock()
         self._counts: Counter[str] = Counter()
+        self._gone: Counter[str] = Counter()  # files no longer in the source, by top folder
         self._closed = False
         lines = [f"sorto run started {started:%Y-%m-%d %H:%M:%S}"]
         lines += [_field(key, value, indent="") for key, value in header.items() if value]
@@ -85,11 +87,23 @@ class RunLog:
                 self._counts["error"] += 1
         self._write(f"\n[{datetime.now():%Y-%m-%d %H:%M:%S}] {title}: {text}\n")
 
+    def gone(self, src_rel: str) -> None:
+        """A file that had left the source before its turn: counted, not listed one by one."""
+        top = src_rel.split("/", 1)[0] + "/" if "/" in src_rel else "(top level)"
+        with self._lock:
+            self._gone[top] += 1
+
     def close(self) -> None:
         with self._lock:
             if self._closed:
                 return
             counts = dict(self._counts)
+            gone = self._gone.most_common()
+        if gone:
+            total = sum(n for _, n in gone)
+            where = ", ".join(f"{top} {n}" for top, n in gone[:5]) + (", …" if len(gone) > 5 else "")
+            self.note("gone", f"{total} file(s) were no longer in the source when their turn came ({where})")
+            counts["gone"] = total
         order = [*TOTALS, *sorted(set(counts) - set(TOTALS))]
         parts = [f"{counts[k]} {TOTALS.get(k, k)}" for k in order if counts.get(k)]
         self._write(f"\nsorto run ended {datetime.now():%Y-%m-%d %H:%M:%S}: {', '.join(parts) or 'no files handled'}\n")
