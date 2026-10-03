@@ -68,6 +68,54 @@ def is_git_repo(path: Path) -> bool:
         return False
 
 
+def is_software_tree(path: Path) -> bool:
+    """*path* is an unpacked software image: an extracted AppImage or a copied Unix root.
+
+    Thousands of libraries, icons and configs that only work together where
+    they are. Filing them one by one spreads a program across the archive.
+    """
+    try:
+        if path.name == "squashfs-root" or (path / "AppRun").exists():
+            return True
+        usr = path / "usr"
+        return (usr / "lib").is_dir() and ((usr / "bin").is_dir() or (usr / "share").is_dir())
+    except OSError:
+        return False
+
+
+def kept_whole(path: Path) -> str:
+    """What *path* is if it must stay whole and where it is ("git repository", "software package"), else ""."""
+    if is_git_repo(path):
+        return "git repository"
+    if is_software_tree(path):
+        return "software package"
+    return ""
+
+
+def whole_tree(path: Path, stop: Path | None = None) -> tuple[Path, str] | None:
+    """The git repository or software package that contains *path*, and which it is; or None.
+
+    Walks upwards like :func:`git_workdir`, with the same meaning of *stop*.
+    """
+    try:
+        cur = path.resolve()
+        end = stop.resolve() if stop is not None else None
+    except OSError:
+        return None
+    if cur.is_file() or not cur.is_dir():
+        cur = cur.parent
+    while True:
+        if end is not None and (cur == end or end not in cur.parents):
+            return None
+        kind = kept_whole(cur)
+        if kind:
+            return cur, kind
+        parent = cur.parent
+        if parent == cur:
+            return None
+        cur = parent
+
+
 def git_workdir(path: Path, stop: Path | None = None) -> Path | None:
     """Return the git repository that contains *path*, or None.
 

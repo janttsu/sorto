@@ -22,7 +22,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from sorto.util import is_git_repo
+from sorto.util import kept_whole
 
 AREA_RE = re.compile(r"^(\d{2})-(\d{2})\s+(.+)$")
 CATEGORY_RE = re.compile(r"^(\d{2})\s+(.+)$")
@@ -406,7 +406,7 @@ def existing_folder_like(id_dir: Path, name: str) -> str:
     """The folder in *id_dir* that already goes by *name* (spelling aside), or ""."""
     key = _folder_key(name)
     for entry in _dirs(id_dir):
-        if _folder_key(entry.name) == key and not is_git_repo(Path(entry.path)):
+        if _folder_key(entry.name) == key and not kept_whole(Path(entry.path)):
             return entry.name
     return ""
 
@@ -496,8 +496,8 @@ def scan_jd(target: Path, *, exclude: list[Path] | None = None) -> JDIndex:
                 continue
             if "jdex" in sub.name.lower():
                 continue
-            if is_git_repo(Path(sub.path)):
-                continue  # a repository is not a place to file into; the model does not see it
+            if kept_whole(Path(sub.path)):
+                continue  # a repository or a software package is not a place to file into; the model does not see it
             subs.append(sub.name)
         item = JDItem(
             id=jd_id,

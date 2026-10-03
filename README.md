@@ -68,7 +68,7 @@ Thumbs.db
 
 ## Good to know
 
-- **Git repositories are never touched.** Nothing is moved out of, around in, or into a repository (bare ones included). This is built in; no rule or setting changes it.
+- **Git repositories are never touched.** Nothing is moved out of, around in, or into a repository (bare ones included). This is built in; no rule or setting changes it. Unpacked software (an extracted AppImage, a copied Unix root) is kept whole the same way.
 - **Nothing is overwritten.** Name clashes become `name-2.ext`. Nothing is deleted unless you ask for it (`--delete-duplicates`, `--delete-junk`).
 - **Folders that belong together move together.** An album, a trip, a project or a monthly dump is judged once as a whole and moved into an ID as one folder, keeping its name and structure. Every file is still checked on its own (type, EXIF date, GPS, camera), and a file that stands out is sorted separately. Mixed folders are sorted file by file. `--no-folders` turns this off.
 - **Your own photos and videos are filed by date.** Whatever ID they belong in, they go into `YYYY/MM` inside it, by the capture date in the file. Downloads, memes and screenshots are not, and neither is a photo with no capture date.

@@ -220,8 +220,11 @@ with the archive as TARGET.
 - **Git repositories: done.** A repository (working tree, linked worktree
   or bare) is never walked into, when sorting and when reorganizing; nothing
   is filed into one; and the same check runs right before every move. It is
-  built in and no rule or setting changes it. Still open: moving a
-  repository *as a whole* into the archive. Today it stays in the source.
+  built in and no rule or setting changes it. Unpacked software (an
+  extracted AppImage, a copied Unix root) gets the same protection, so a
+  program is no longer spread across the archive file by file. Still open:
+  moving a repository or a package *as a whole* into the archive. Today it
+  stays in the source.
 - **Folders as units: done.** See 1.5.
 - **Protected IDs.** In reorganize mode, sync folders (camera uploads, a
   folder another device syncs) should never be emptied. Today this is done

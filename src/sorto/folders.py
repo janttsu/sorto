@@ -29,7 +29,7 @@ from sorto.media import (
     read_exif_many,
     video_frames,
 )
-from sorto.util import extract_json_object, human_size
+from sorto.util import extract_json_object, human_size, kept_whole
 
 MAX_NAMES = 80
 # Files that make a folder software: it only works in one piece, so nothing is taken out of it.
@@ -68,7 +68,10 @@ def walk_folder(source: Path, rel: str, limit: int) -> FolderWalk:
     walk = FolderWalk(rel=rel)
     root = source / rel
     for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
-        dirnames[:] = sorted(d for d in dirnames if not d.startswith(".") and d not in SKIP_DIRS)
+        dirnames[:] = sorted(
+            d for d in dirnames
+            if not d.startswith(".") and d not in SKIP_DIRS and not kept_whole(Path(dirpath) / d)
+        )  # what stays whole is not part of the folder's profile: its files never move with it
         for name in sorted(filenames):
             path = Path(dirpath) / name
             try:

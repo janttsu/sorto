@@ -67,12 +67,13 @@ from sorto.util import (
     estimate_tokens,
     git_workdir,
     human_size,
-    is_git_repo,
     is_under_root,
+    kept_whole,
     posix_rel,
     same_content,
     unique_dest,
     utc_now_iso,
+    whole_tree,
 )
 
 log = logging.getLogger("sorto")
@@ -715,7 +716,7 @@ class Engine:
             self.cfg.source,
             self.cfg.include,
             self._scan_excludes(),
-            prune=self._reorganize_prune if reorg else _git_prune,
+            prune=self._reorganize_prune if reorg else _whole_prune,
         ):
             if self.stop_event.is_set():
                 break
@@ -741,7 +742,7 @@ class Engine:
         Only files near the top of each ID are re-checked (``reorganize_depth``
         folders below it); deeper trees are projects, backups or albums that
         move as a whole, not file by file. ``NN.00`` notes, hidden folders,
-        unknown ID folders and git working trees are never touched.
+        unknown ID folders, git repositories and software packages are never touched.
         """
         parts = rel_dir.split("/")
         if parts[-1].startswith("."):
@@ -756,7 +757,7 @@ class Engine:
                 return True
             if len(parts) - pos - 1 > self.cfg.reorganize_depth:
                 return True
-        return is_git_repo(path)
+        return bool(kept_whole(path))
 
     def _reorganize_candidate(self, rel: str) -> bool:
         name = rel.rsplit("/", 1)[-1].lower()
@@ -1482,8 +1483,9 @@ class Engine:
         """Create the named folder a user rule asked for. Returns "" when it is there, else why not."""
         rel = f"{plan.item.rel}/{plan.new_subfolder}"
         path = self.cfg.target / rel
-        if git_workdir(path, stop=self.cfg.target) is not None:
-            return f"{rel} would be inside a git repository: nothing is filed into a repository"
+        inside = whole_tree(path, stop=self.cfg.target)
+        if inside is not None:
+            return f"{rel} would be inside a {inside[1]}: nothing is filed into a {inside[1]}"
         try:
             if not is_under_root(self.cfg.target, path.parent):
                 raise OSError(f"{path.parent} is outside the target")
@@ -1762,22 +1764,26 @@ class Engine:
             return self._decision_value == "move"
 
     def _repo_in_the_way(self, src_rel: str, dest_rel: str) -> str:
-        """Why this move would touch a git repository ("" when it does not).
+        """Why this move would touch a git repository or a software package ("" when it does not).
 
-        Repositories stay whole and where they are: nothing is moved out of
+        Repositories and unpacked software (an extracted AppImage, a copied
+        Unix root) stay whole and where they are: nothing is moved out of
         one, around inside one, or into one. The scan already skips them;
         this is the last check before any file moves, whatever planned it
         (the model, a junk pattern, a whole folder, a date folder).
         """
         cfg = self.cfg
-        repo = git_workdir(cfg.source / src_rel, stop=cfg.source)
-        if repo is not None:
-            where = posix_rel(str(repo.relative_to(cfg.source.resolve())))
-            return f"inside the git repository {where}: repositories are kept whole, nothing in them is moved"
-        repo = git_workdir(cfg.target / dest_rel, stop=cfg.target)
-        if repo is not None:
-            where = posix_rel(str(repo.relative_to(cfg.target.resolve())))
-            return f"{dest_rel} is inside the git repository {where}: nothing is filed into a repository"
+        inside = whole_tree(cfg.source / src_rel, stop=cfg.source)
+        if inside is not None:
+            where = posix_rel(str(inside[0].relative_to(cfg.source.resolve())))
+            kind = inside[1]
+            plural = "repositories" if kind == "git repository" else "packages"
+            return f"inside the {kind} {where}: {plural} are kept whole, nothing in them is moved"
+        inside = whole_tree(cfg.target / dest_rel, stop=cfg.target)
+        if inside is not None:
+            where = posix_rel(str(inside[0].relative_to(cfg.target.resolve())))
+            noun = "repository" if inside[1] == "git repository" else "package"
+            return f"{dest_rel} is inside the {inside[1]} {where}: nothing is filed into a {noun}"
         return ""
 
     def _move(self, file_id: int, src_rel: str, dest_rel: str) -> None:
@@ -1866,9 +1872,9 @@ class Engine:
         self._release(file_id)
 
 
-def _git_prune(rel_dir: str, path: Path) -> bool:
-    """Never walk into a git repository: moving files out of it one by one breaks it."""
-    return is_git_repo(path)
+def _whole_prune(rel_dir: str, path: Path) -> bool:
+    """Never walk into a git repository or a software package: moving files out one by one breaks it."""
+    return bool(kept_whole(path))
 
 
 def _has_subfolders(path: Path) -> bool:
