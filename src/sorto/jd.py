@@ -111,6 +111,17 @@ class JDIndex:
             lines.append(f"{name}  (area {area}; IDs: {', '.join(ids) or 'none yet'})")
         return "\n".join(lines)
 
+    def category_ids(self, category: str) -> list[JDItem]:
+        """The real IDs of a category, no index note and no inbox, in number order."""
+        return sorted(
+            (i for i in self.items.values() if i.id[:2] == category and not i.is_index and not i.is_inbox),
+            key=lambda i: i.id,
+        )
+
+    def ids_outline(self, category: str) -> str:
+        """A category's IDs with their descriptions and subfolders, for the existing-ID check."""
+        return "\n".join(_render_item(i, indent="") for i in self.category_ids(category))
+
     def area_outline(self) -> str:
         """One line per area with its categories, for inventing a new category."""
         lines = []
@@ -209,8 +220,9 @@ class NewID:
 
     item: JDItem
     category: str
-    reused: bool = False  # an ID with the same name already existed
+    reused: bool = False  # an ID with the same name already existed, or an existing ID holds the topic
     new_category: NewCategory | None = None  # the category has to be created first
+    subfolder: str = ""  # reused because an existing ID holds this kind of file: the topic's folder in it
 
     def describe(self) -> str:
         text = f"{self.item.id} {self.item.name}"

@@ -242,6 +242,38 @@ def parse_new_id_answer(text: str) -> tuple[str, str]:
     return str(data.get("name") or "")[:120], str(data.get("reason") or "")[:300]
 
 
+EXISTING_HOME_SYSTEM = (
+    "A topic is about to get a new Johnny.Decimal ID of its own in the category shown. Before that, check "
+    "whether one of the category's existing IDs already holds this kind of file, so the topic fits as a "
+    "folder named after it inside that ID. A new ID is right only when the topic is a different kind of "
+    "thing from what every listed ID holds; one more project, model, item or person of a kind an ID already "
+    "holds belongs in that ID. Judge by each ID's name, description and subfolders. If the user's rules say "
+    "in so many words that this topic gets an ID of its own, answer \"none\". A rule that only asks for "
+    "folders named after what the files are is met by a folder inside the existing ID. Reply with JSON only: "
+    '{"id": "NN.NN" or "none", "confidence": 0.0-1.0, "reason": "at most 20 words, in English"}.'
+)
+
+
+def existing_home_question(topic: str, summary: str, category: str, ids: str, rules: str = "") -> str:
+    return (
+        f"CATEGORY: {category}\nITS IDS:\n{ids}\n\n"
+        + (f"THE USER'S RULES:\n{rules}\n\n" if rules.strip() else "")
+        + f"NEW TOPIC: {topic}\nFILE: {summary}\n\n"
+        "Does one of these IDs already hold this kind of file, so the topic fits as a folder inside it?"
+    )
+
+
+def parse_existing_home_answer(text: str) -> tuple[str, float, str]:
+    """(an existing ID "NN.NN" or "none", confidence, reason)."""
+    data = focused_answer(text, "id", "confidence")
+    try:
+        confidence = max(0.0, min(1.0, float(data.get("confidence", 0.0))))
+    except (TypeError, ValueError):
+        confidence = 0.0
+    m = re.search(r"\d{2}\.\d{2}", str(data.get("id") or ""))
+    return (m.group(0) if m else "none"), confidence, str(data.get("reason") or "")[:300]
+
+
 NEW_CATEGORY_SYSTEM = (
     "No existing Johnny.Decimal category fits a new topic, so a new category may be created for it. Choose "
     "the existing area it belongs in and name the category: the broader theme that this topic and similar "
@@ -647,6 +679,21 @@ class OpenAICompatClient:
             return parse_new_id_answer(self._complete(messages, temperature=0.0, max_tokens=FOCUSED_MAX_TOKENS))
         except (ValueError, json.JSONDecodeError) as e:
             raise LLMParseError(f"new ID answer was not valid JSON: {e}") from e
+
+    def existing_home(
+        self, topic: str, summary: str, category: str, ids: str, rules: str = ""
+    ) -> tuple[str, float, str]:
+        """Last check before a new ID in a category: would a folder in one of its IDs do?"""
+        messages: list[dict[str, Any]] = [
+            {"role": "system", "content": EXISTING_HOME_SYSTEM},
+            {"role": "user", "content": existing_home_question(topic, summary, category, ids, rules)},
+        ]
+        try:
+            return parse_existing_home_answer(
+                self._complete(messages, temperature=0.0, max_tokens=FOCUSED_MAX_TOKENS)
+            )
+        except (ValueError, json.JSONDecodeError) as e:
+            raise LLMParseError(f"existing ID answer was not valid JSON: {e}") from e
 
     def invent_category(self, topic: str, summary: str, areas: str, rules: str = "") -> tuple[str, str, float, str]:
         """Last question before giving up on a new ID: a new category in an existing area, if any."""

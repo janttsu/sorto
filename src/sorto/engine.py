@@ -1500,12 +1500,14 @@ class Engine:
             self._move_with_folder(file_id, src_rel, unit, inner, packet, by_date=False)
             return
         new: NewID | None = None
+        home_folder = ""  # the topic's folder in an existing ID that holds its kind, instead of a new ID
         if item is None:
             new = self._new_id_for(file_id, src_rel, cls)
             if new is None:
                 return
             if new.reused:
-                cls = replace(cls, jd_id=new.item.id)
+                home_folder = new.subfolder
+                cls = replace(cls, jd_id=new.item.id, subfolder=home_folder or cls.subfolder)
                 if unit is not None and cls.jd_id == unit["jd_id"] and not self._goes_by_date(packet, cls, new.item):
                     self._move_with_folder(file_id, src_rel, unit, inner, packet, by_date=False)
                     return
@@ -1525,8 +1527,9 @@ class Engine:
                 own_media=self._is_own_media(packet, cls),
                 date_folders=self.cfg.date_folders,
                 date_ids=self.cfg.date_folder_ids,
-                # A folder that is not there yet is made only when one of the user's rules was followed.
-                new_subfolder=bool(followed) and self.cfg.new_subfolders == "rules",
+                # A folder that is not there yet is made only when one of the user's rules was followed,
+                # or for a topic that would otherwise have got an ID of its own.
+                new_subfolder=bool(followed or home_folder) and self.cfg.new_subfolders == "rules",
             )
         except PlanError as e:
             self._keep(file_id, src_rel, "needs_user", str(e))
@@ -1534,7 +1537,12 @@ class Engine:
         if self.cfg.reorganize and self._stays(file_id, src_rel, plan, cls):
             return
         self._set_view(dest_rel=plan.dest_rel, jd_id=plan.item.id, jd_name=plan.item.name)
-        if plan.new_subfolder:
+        if home_folder:
+            where = f"{'new ' if plan.new_subfolder else ''}folder {plan.subfolder} in " if plan.subfolder else ""
+            self._set_view(folder=f"{where}{plan.item.id} {plan.item.name}: an existing ID holds this kind of file, "
+                           "so no new ID")
+            self._note_run("no new ID", f"{src_rel}: {where}{plan.item.id} {plan.item.name} instead of a new ID")
+        elif plan.new_subfolder:
             self._set_view(folder=f"new folder {plan.new_subfolder} in {plan.item.id} {plan.item.name}, as your rule asks")
         elif cls.subfolder and not plan.subfolder and not plan.dated and not new:
             # Said out loud: a folder the model named was not used.
@@ -1578,7 +1586,7 @@ class Engine:
         except OSError as e:
             return f"could not create the folder {rel}: {e}"
         self.progress.append({"action": "created_folder", "rel": rel, "jd_id": plan.item.id, "for": for_rel})
-        self.emit("jd", f"created folder {plan.new_subfolder} in {plan.item.id} {plan.item.name} (asked for by a rule)", file_id)
+        self.emit("jd", f"created folder {plan.new_subfolder} in {plan.item.id} {plan.item.name}", file_id)
         self._note_run("new folder", f"created {rel} for {for_rel}")
         return ""
 
@@ -1655,6 +1663,9 @@ class Engine:
         elif checked is None:
             return why
         else:
+            home = self._existing_home(llm, file_id, checked, name, summary)
+            if home is not None:
+                return NewID(item=home, category=checked, reused=True, subfolder=name)
             proposal = propose_new_id(self.index, checked, name)
         if isinstance(proposal, str):
             return f"{said}{proposal}"
@@ -1738,6 +1749,32 @@ class Engine:
                 f"unsure which category a new ID for {name!r} belongs in ({category}, confidence {confidence:.2f})"
             )
         return category, ""
+
+    def _existing_home(self, llm: Any, file_id: int, category: str, name: str, summary: str) -> JDItem | None:
+        """An existing ID of *category* that already holds this kind of file, or None.
+
+        The last question before a new ID is made: one more 3D model, trip or
+        client of a kind an ID already holds gets a folder named after it in
+        that ID, not an ID of its own. A model reading one file at a time
+        tends to see a topic of its own in every new project; asked this on
+        its own, with only the category's IDs in view, it can compare.
+        """
+        asker = getattr(llm, "existing_home", None)
+        ids = self.index.category_ids(category)
+        if asker is None or not ids:
+            return None
+        label = self.index.categories.get(category, category)
+        try:
+            found, confidence, why = asker(name, summary, label, self.index.ids_outline(category), self.rules.text)
+        except LLMError as e:
+            self.emit("jd", f"could not check for an existing ID for {name!r}: {e}"[:300], file_id)
+            return None
+        item = self.index.get(found) if found != "none" else None
+        if item is None or item not in ids or confidence < self.cfg.new_id_min_confidence:
+            self.emit("jd", f"existing ID check for {name!r}: none fits ({found}, {confidence:.2f}) {why}", file_id)
+            return None
+        self.emit("jd", f"existing ID check for {name!r}: {item.id} {item.name} ({confidence:.2f}) {why}", file_id)
+        return item
 
     def _new_category(self, llm: Any, file_id: int, name: str, summary: str, why_none: str) -> NewID | str:
         """No existing category fits: plan a new one in an existing area, or say why there is none.

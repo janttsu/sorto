@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Before a new ID is made, sorto asks whether an ID of that category already
+  holds this kind of file. If one does, the file goes into a folder named
+  after the topic inside that ID instead (one more 3D model into the ID for
+  models, not an ID per model). `new_subfolders = "off"` puts it into the ID
+  itself. A rule that explicitly gives a topic an ID of its own still gets one.
 - At the end of a run sorto says what it leaves in the source and why:
   duplicates and junk kept earlier (and the option that removes them), files
   left for you (`--retry-kept`), files with an error (`sorto resume`), and the
