@@ -87,6 +87,11 @@ class RunLog:
                 self._counts["error"] += 1
         self._write(f"\n[{datetime.now():%Y-%m-%d %H:%M:%S}] {title}: {text}\n")
 
+    def leftovers(self, lines: list[str]) -> None:
+        """What the run leaves in the source and why, just before the last line."""
+        body = "\n".join(_field("", line) for line in lines)
+        self._write(f"\n[{datetime.now():%Y-%m-%d %H:%M:%S}] left in the source:\n{body}\n")
+
     def gone(self, src_rel: str) -> None:
         """A file that had left the source before its turn: counted, not listed one by one."""
         top = src_rel.split("/", 1)[0] + "/" if "/" in src_rel else "(top level)"

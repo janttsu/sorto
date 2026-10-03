@@ -459,12 +459,22 @@ def _headless_loop(engine: Engine) -> int:
     finally:
         engine.request_stop()
         engine.join(timeout=8)
+        _print_leftovers(engine)
+
+
+def _print_leftovers(engine: Engine) -> None:
+    lines = engine.leftovers()
+    if lines:
+        print("\nleft in the source:", flush=True)
+        for line in lines:
+            print(f"    {line}", flush=True)
 
 
 def _run_with_tui(engine: Engine) -> int:
     from sorto.tui import SortoApp
 
     SortoApp(engine).run()
+    _print_leftovers(engine)
     if engine.run_log is not None:
         engine.run_log.close()  # the TUI may leave before the engine has wound down
         print(f"log of this run: {engine.run_log.path}")

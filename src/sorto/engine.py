@@ -115,6 +115,9 @@ class Engine:
         self.db = db or Database(cfg.db_path)
         self.progress = ProgressLog(cfg.progress_path)
         self.run_log: RunLog | None = None  # started with the run, see start()
+        self._whole_trees: dict[str, str] = {}  # source folders the scan left whole: rel -> what it is
+        self._leftovers: list[str] | None = None  # what stayed in the source, worked out once at the end
+        self._leftovers_lock = threading.Lock()
         if llm is None:
             llm = make_llm(cfg)
             _fit_context(cfg, llm)
@@ -511,6 +514,7 @@ class Engine:
         for t in self._threads:
             remaining = None if deadline is None else max(0.0, deadline - time.monotonic())
             t.join(timeout=remaining)
+        self.leftovers()
         self.db.checkpoint()
         try:
             self.progress.close()
@@ -716,7 +720,7 @@ class Engine:
             self.cfg.source,
             self.cfg.include,
             self._scan_excludes(),
-            prune=self._reorganize_prune if reorg else _whole_prune,
+            prune=self._reorganize_prune if reorg else self._inbox_prune,
         ):
             if self.stop_event.is_set():
                 break
@@ -735,6 +739,87 @@ class Engine:
         if new_work:
             self.emit("scan", f"discovered {new_work} new/changed file(s)")
         return new_work
+
+    def _inbox_prune(self, rel_dir: str, path: Path) -> bool:
+        """Never walk into a git repository or a software package: moving files out one by one breaks it."""
+        kind = kept_whole(path)
+        if kind:
+            with self._lock:
+                self._whole_trees[rel_dir] = kind
+        return bool(kind)
+
+    def leftovers(self) -> list[str]:
+        """What this run leaves in the source and why, one line per kind (empty when nothing).
+
+        Worked out once, when the run ends: files sorto kept earlier and that
+        are still there (duplicates, junk, files left for you, files with an
+        error) and the git repositories and software packages it does not
+        enter. A run that "handled no files" then says why. Written to the
+        run log as well. Not in reorganize mode, where kept files are simply
+        the ones already in the right place.
+        """
+        with self._leftovers_lock:
+            if self._leftovers is None:
+                try:
+                    self._leftovers = [] if self.cfg.reorganize else self._work_out_leftovers()
+                except Exception:
+                    log.exception("could not work out what stays in the source")
+                    self._leftovers = []
+                if self._leftovers and self.run_log is not None:
+                    self.run_log.leftovers(self._leftovers)
+                for line in self._leftovers:
+                    self.emit("engine", f"left in the source: {line}")
+            return list(self._leftovers)
+
+    def _work_out_leftovers(self) -> list[str]:
+        kinds: dict[str, int] = {}
+        rows = self.db.execute(
+            "SELECT src_rel, status, duplicate_of, llm_reason FROM files "
+            "WHERE status IN ('skipped', 'needs_user', 'error') AND src_rel IS NOT NULL"
+        ).fetchall()
+        for row in rows:
+            if not (self.cfg.source / str(row["src_rel"])).is_file():
+                continue
+            reason = str(row["llm_reason"] or "")
+            if row["status"] == "error":
+                kind = "error"
+            elif row["status"] == "needs_user":
+                kind = "for_you"
+            elif row["duplicate_of"]:
+                kind = "duplicate"
+            elif reason.startswith("junk:"):
+                kind = "junk"
+            elif "by user" in reason:
+                kind = "by_you"
+            else:
+                kind = "kept"
+            kinds[kind] = kinds.get(kind, 0) + 1
+        lines = []
+        texts = {
+            "duplicate": ("duplicate", "duplicates", "byte-for-byte copies of files already in the target; "
+                          "--delete-duplicates removes them"),
+            "junk": ("junk file", "junk files", "caches, temp files and OS clutter; --delete-junk removes them"),
+            "for_you": ("file left for you", "files left for you", "--retry-kept asks the model again"),
+            "by_you": ("file you chose to keep", "files you chose to keep", "not asked about again"),
+            "kept": ("other kept file", "other kept files", "the run log of the run that kept them says why"),
+            "error": ("file with an error", "files with an error", "sorto resume tries them again"),
+        }
+        for kind, (one, many, why) in texts.items():
+            if kinds.get(kind):
+                lines.append(f"{_plural(kinds[kind], one, many)} ({why})")
+        with self._lock:
+            trees = dict(self._whole_trees)
+        for kind, plural, why in (
+            ("git repository", "git repositories", "sorto never moves a repository; place it yourself"),
+            ("software package", "software packages", "unpacked software is kept whole; place it yourself"),
+        ):
+            rels = sorted(rel for rel, k in trees.items() if k == kind and (self.cfg.source / rel).is_dir())
+            if not rels:
+                continue
+            files = sum(_count_files(self.cfg.source / rel) for rel in rels)
+            named = ", ".join(rels[:3]) + (f" and {len(rels) - 3} more" if len(rels) > 3 else "")
+            lines.append(f"{_plural(len(rels), kind, plural)} with {_plural(files, 'file', 'files')}: {named} ({why})")
+        return lines
 
     def _reorganize_prune(self, rel_dir: str, path: Path) -> bool:
         """Reorganize mode: which folders not to walk into (True = skip).
@@ -1872,9 +1957,19 @@ class Engine:
         self._release(file_id)
 
 
-def _whole_prune(rel_dir: str, path: Path) -> bool:
-    """Never walk into a git repository or a software package: moving files out one by one breaks it."""
-    return bool(kept_whole(path))
+def _count_files(path: Path, limit: int = 200_000) -> int:
+    """Files in a tree that stays whole (git's own objects not counted), up to *limit*."""
+    n = 0
+    for _dirpath, dirnames, filenames in os.walk(path, followlinks=False):
+        dirnames[:] = [d for d in dirnames if d != ".git"]
+        n += len(filenames)
+        if n >= limit:
+            break
+    return n
+
+
+def _plural(n: int, one: str, many: str) -> str:
+    return f"{n:,} {one if n == 1 else many}"
 
 
 def _has_subfolders(path: Path) -> bool:

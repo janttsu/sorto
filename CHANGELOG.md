@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- At the end of a run sorto says what it leaves in the source and why:
+  duplicates and junk kept earlier (and the option that removes them), files
+  left for you (`--retry-kept`), files with an error (`sorto resume`), and the
+  git repositories and software packages it does not enter, with their file
+  counts. Printed at the end of the run and written to the run log, so a run
+  that handled no files explains itself.
 - Unpacked software is kept whole like a git repository: a `squashfs-root`
   folder, a folder with an `AppRun` file (an extracted AppImage) or a copied
   Unix root (`usr/lib` with `usr/bin` or `usr/share`) is never walked into or
