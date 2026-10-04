@@ -44,7 +44,7 @@ DEFAULT_CONFIG_TOML = """\
 [llm]
 # url = "http://127.0.0.1:11434/v1"
 # model = "qwen3.6:35b-a3b"
-# models = ["qwen3.6:35b-a3b", "qwen3.5:9b-16k"]   # the TUI's m key switches between these
+# models = ["qwen3.6:35b-a3b", "qwen3.5:9b-16k"]   # what sorto doctor loads and checks
 # structure_model = "qwen3.6:35b-a3b"  # always decides new IDs and categories, whichever model reads the
 #                                      # files; "" = the model that reads the files decides them too
 # context_window = 65536       # keep equal to OLLAMA_CONTEXT_LENGTH / grok context_window

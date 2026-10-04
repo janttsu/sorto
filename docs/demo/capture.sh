@@ -14,8 +14,8 @@
 #
 # Env: OUT (default ~/shots), COLS/ROWS (140x60), FONT_SIZE (11), NO_RESET=1 keeps
 # the current demo data, FILE_TIMEOUT seconds per file (900), DISPLAY_NUM (99),
-# SORTO_ARGS extra run options (e.g. "--llm-model qwen3.5:9b-16k"),
-# SWITCH_MODEL_AT=N presses the TUI's m key (switch model) after the Nth confirmation.
+# SORTO_ARGS extra run options (e.g. "--model qwen3.5:9b-16k"); without --model the TUI would ask first,
+# so the model given in MODEL (default qwen3.6:35b-a3b) is passed.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -30,7 +30,7 @@ SORTO="${SORTO:-$(command -v sorto || echo "$HOME/.local/bin/sorto")}"
 SESSION=sortodemo
 TMUXCONF="$OUT/.tmux.conf"
 read -r -a EXTRA <<<"${SORTO_ARGS:-}"
-SWITCH_MODEL_AT="${SWITCH_MODEL_AT:-0}"
+MODEL="${MODEL:-qwen3.6:35b-a3b}"
 BG='#0f1419'
 
 mkdir -p "$OUT"
@@ -127,9 +127,6 @@ drive_confirm() {
     shot "$OUT/$(printf '%s-%02d-%s' "$prefix" "$n" "$(slug "$fname")").png"
     tmux -f "$TMUXCONF" send-keys -t "$SESSION" Enter
     last_result="$fname"
-    if [ "$n" -eq "$SWITCH_MODEL_AT" ]; then
-      sleep 0.5; tmux -f "$TMUXCONF" send-keys -t "$SESSION" m; log "pressed m (switch model)"
-    fi
     # wait until the prompt is gone before looking for the next one
     for _ in $(seq 1 60); do now_panel | grep -q 'Move it there?' || break; sleep 0.5; done
     sleep 1
@@ -139,12 +136,12 @@ drive_confirm() {
 }
 
 scenario_inbox() {
-  launch inbox "$SORTO" run "$HOME/demo/Inbox" -t "$HOME/demo/Archive" --once --confirm "${EXTRA[@]}"
+  launch inbox "$SORTO" run "$HOME/demo/Inbox" -t "$HOME/demo/Archive" --once --confirm --model "$MODEL" "${EXTRA[@]}"
   drive_confirm inbox
 }
 
 scenario_reorg() {
-  launch reorg "$SORTO" run "$HOME/demo/Messy" -t "$HOME/demo/Messy" --once --confirm "${EXTRA[@]}"
+  launch reorg "$SORTO" run "$HOME/demo/Messy" -t "$HOME/demo/Messy" --once --confirm --model "$MODEL" "${EXTRA[@]}"
   drive_confirm reorg
 }
 

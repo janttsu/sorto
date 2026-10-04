@@ -119,7 +119,10 @@ def _add_run_opts(p: argparse.ArgumentParser) -> None:
     p.add_argument("--exclude", action="append", default=[], metavar="GLOB", help="Repeatable exclude glob")
     p.add_argument("--max-file-mb", type=int, default=None, help="Metadata only above this size (default 64)")
     p.add_argument("--llm-url", default=None, help="Local OpenAI-compatible base URL (loopback only)")
-    p.add_argument("--llm-model", default=None, help="Model name (default qwen3.6:35b-a3b)")
+    p.add_argument(
+        "--model", "--llm-model", dest="llm_model", default=None, metavar="NAME",
+        help="Local model that reads the files; without it the TUI asks, listing every model the server has",
+    )
     p.add_argument("--log-level", default=None, help="DEBUG/INFO/WARNING/ERROR")
     p.add_argument("--no-tui", action="store_true", help="Plain line output instead of the TUI")
     p.add_argument("--fake-llm", action="store_true", help=argparse.SUPPRESS)
@@ -168,6 +171,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_index = sub.add_parser("index", help="Show the Johnny.Decimal outline sorto reads from TARGET")
     p_index.add_argument("target", type=Path)
     p_index.set_defaults(func=cmd_index)
+
+    p_fsck = sub.add_parser(
+        "fsck",
+        help="Check TARGET's Johnny.Decimal structure and JDex notes; propose fixes to accept file by file",
+    )
+    p_fsck.add_argument("target", type=Path)
+    p_fsck.add_argument("--yes", action="store_true", help="Write every proposed change without asking")
+    p_fsck.add_argument("--no-tui", action="store_true", help="Ask about each change as plain text instead of the TUI")
+    p_fsck.add_argument(
+        "--model", "--llm-model", dest="llm_model", default=None, metavar="NAME",
+        help="Local model that reviews the tree (default: structure_model); without it the TUI asks",
+    )
+    p_fsck.set_defaults(func=cmd_fsck)
 
     p_doctor = sub.add_parser("doctor", help="Check source/target, local LLM, optional tools")
     _add_roots(p_doctor, required=False)
@@ -317,6 +333,51 @@ def cmd_index(args: argparse.Namespace) -> int:
     print(index.render() or "(no Johnny.Decimal IDs found)")
     print(f"\n{len(index)} IDs")
     return 0 if len(index) else 1
+
+
+def cmd_fsck(args: argparse.Namespace) -> int:
+    from sorto.fsck import run
+
+    model = args.llm_model
+    if model is None and not args.yes and not args.no_tui and _terminal():
+        from sorto.fsck_model import structure_llm
+        from sorto.model_picker import pick_model
+
+        target = Path(args.target).expanduser().resolve()
+        llm = structure_llm(target)
+        model = pick_model(llm, default=str(getattr(llm, "model", "")), purpose=(
+            "Which model should review the Johnny.Decimal tree? It reads every category and thinks about the "
+            "whole structure before anything is proposed; a big model gives the best review."
+        ))
+        if model is None:
+            print("no model chosen; nothing was done")
+            return 0
+    return run(args.target, yes=args.yes, tui=False if args.no_tui else None, model=model)
+
+
+def _terminal() -> bool:
+    return sys.stdin.isatty() and sys.stdout.isatty() and os.environ.get("SORTO_NO_TUI") != "1"
+
+
+def _ask_model(args: argparse.Namespace) -> bool:
+    """No --model and a TUI: ask which model reads the files. False when the user cancelled."""
+    from sorto.model_picker import pick_model
+
+    source, target = _roots(args)
+    cfg = load_config(source, target, cli=args)
+    try:
+        llm = make_llm(cfg)
+    except NotLocalError as e:
+        raise SystemExit(f"error: {e}") from e
+    structure = cfg.structure_model or cfg.llm_model
+    chosen = pick_model(llm, default=cfg.llm_model, purpose=(
+        f"Which model should read and sort the files? New IDs and categories are still decided by {structure} "
+        "(structure_model). Big models are more accurate, small ones faster."
+    ))
+    if chosen is None:
+        return False
+    args.llm_model = chosen
+    return True
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
@@ -482,8 +543,12 @@ def _run_with_tui(engine: Engine) -> int:
 
 
 def _run(args: argparse.Namespace, *, retry_errors: bool) -> int:
-    _cfg, engine = _build_engine(args, retry_errors=retry_errors)
     use_tui = not args.no_tui and sys.stdout.isatty() and os.environ.get("SORTO_NO_TUI") != "1"
+    if use_tui and args.llm_model is None and not args.fake_llm and sys.stdin.isatty():
+        if not _ask_model(args):
+            print("no model chosen; nothing was done")
+            return 0
+    _cfg, engine = _build_engine(args, retry_errors=retry_errors)
     return _run_with_tui(engine) if use_tui else _headless_loop(engine)
 
 

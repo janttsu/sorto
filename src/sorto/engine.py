@@ -48,7 +48,13 @@ from sorto.jd import (
     used_category_numbers,
     used_id_numbers,
 )
-from sorto.llm import FakeLLMClient, LLMError, LLMParseError, OpenAICompatClient
+from sorto.llm import (
+    FakeLLMClient,
+    LLMError,
+    LLMParseError,
+    OpenAICompatClient,
+    classification_schema,
+)
 from sorto.media import date_subfolder
 from sorto.models import (
     AnalysisPacket,
@@ -172,9 +178,11 @@ class Engine:
         index = scan_jd(self.cfg.target, exclude=self._index_excludes())
         self.rules = load_rules(self.cfg.rules_file)
         outline = index.render(max_chars=self._outline_budget_chars())
+        ids = sorted(i.id for i in index.choices())
         with self._lock:
             self.index = index
             self._outline = outline
+            self._answer_schema = classification_schema(ids, sorted(index.categories))
             self._index_at = time.monotonic()
         self._set_prompt(self._build_prompt(outline))
 
@@ -299,36 +307,6 @@ class Engine:
                 self._enqueue_identify(file_id)
         self.emit("engine", f"mode={'DRY' if value else 'LIVE'}")
         return True
-
-    def switch_model(self, model: str | None = None) -> str:
-        """Use *model* (default: the next one in cfg.models) from the next file on."""
-        models = self.cfg.models or [self.cfg.llm_model]
-        if model is None:
-            cur = self.model_name
-            model = models[(models.index(cur) + 1) % len(models)] if cur in models else models[0]
-        if model == self.model_name:
-            return model
-        cfg = config_for_model(self.cfg, model)
-        llm = make_llm(cfg)
-        health = getattr(llm, "health", None)
-        if health is not None:
-            ok, detail = health()
-            if not ok:
-                raise ValueError(f"{model}: {detail}")
-        _fit_context(cfg, llm)
-        self.cfg.llm_model = cfg.llm_model
-        self.cfg.llm_url = cfg.llm_url
-        self.cfg.context_window = cfg.context_window
-        self.cfg.timeout_sec = cfg.timeout_sec
-        self.cfg.llm_profile_source = cfg.llm_profile_source
-        previous, self.llm = self.llm, llm
-        release = getattr(previous, "release", None)
-        if release is not None:
-            release()  # the model that was kept loaded for the run is no longer sorto's to hold
-        self.reload_index()
-        self.emit("engine", f"model → {model} (from the next file; loading it now)")
-        self.warm_up()
-        return model
 
     def warm_up(self) -> None:
         """Load the model and cache the system prompt while files are prepared."""
@@ -480,12 +458,33 @@ class Engine:
             unknown = [i for i in self.rules.ids if self.index.get(i) is None]
             if unknown:
                 self.emit("rules", f"rules mention IDs that are not in the target: {', '.join(unknown)}")
+        self._check_jdex()
         self.warm_up()
         self._spawn(self._scan_loop, "sorto-scan")
         for i in range(self.cfg.identify_workers):
             self._spawn(self._identify_loop, f"sorto-id-{i}")
         self._spawn(self._sort_loop, "sorto-sort")
         self._spawn(self._rules_loop, "sorto-rules")
+
+    def _check_jdex(self) -> None:
+        """Say once, before sorting, when the target's JDex notes and its folders disagree. Writes nothing."""
+        from sorto.fsck import check
+
+        try:
+            report = check(self.cfg.target)
+        except Exception:
+            log.exception("JDex check failed")
+            return
+        if report.clean:
+            return
+        what = []
+        if report.changes:
+            what.append(f"{len(report.changes)} note(s) to update")
+        if report.problems:
+            what.append(f"{len(report.problems)} other problem(s)")
+        line = f"JDex notes and folders disagree: {', '.join(what)}; sorto fsck {self.cfg.target} shows them"
+        self.emit("jd", line)
+        self._note_run("JDex", line)
 
     def _start_run_log(self) -> None:
         """This run's own log file. Sorting goes on without it if it cannot be written."""
@@ -1436,6 +1435,8 @@ class Engine:
             except (TypeError, ValueError):
                 pass
         t0 = time.monotonic()
+        if hasattr(self.llm, "answer_schema"):
+            self.llm.answer_schema = self._answer_schema
         try:
             cls = self.llm.classify(packet, self._system_prompt)
         except LLMParseError as e:

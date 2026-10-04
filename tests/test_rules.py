@@ -11,7 +11,7 @@ from conftest import make_engine, packet
 from sorto.cli import main
 from sorto.config import config_for_model, load_config, packaged_prompt
 from sorto.identify import identify_file, looks_like_email
-from sorto.llm import FakeLLMClient, packet_user_message, parse_classification
+from sorto.llm import packet_user_message, parse_classification
 from sorto.models import AnalysisView
 from sorto.rules import RULES_TEMPLATE, ensure_rules_file, load_rules
 from sorto.tui import render_view
@@ -131,23 +131,6 @@ def test_model_switch_uses_that_models_grok_profile(cfg, monkeypatch: pytest.Mon
     # A model without a profile of its own stays on the server already in use.
     big = config_for_model(cfg, "big:35b")
     assert config_for_model(big, "local-tag:1b").llm_url == "http://127.0.0.1:11435/v1"
-
-    made: list[str] = []
-
-    def fake_make_llm(c, *, fake=False):
-        made.append(c.llm_model)
-        llm = FakeLLMClient()
-        llm.model = c.llm_model
-        return llm
-
-    monkeypatch.setattr("sorto.engine.make_llm", fake_make_llm)
-    cfg.models = ["big:35b", "small:9b"]
-    eng = make_engine(cfg, llm_model="big:35b")
-    eng.llm.model = "big:35b"
-    assert eng.switch_model() == "small:9b"
-    assert eng.model_name == "small:9b" and eng.cfg.context_window == 16384
-    assert eng.switch_model() == "big:35b"
-    assert made == ["small:9b", "big:35b"]
 
 
 def test_rules_section_lets_a_rule_ask_for_an_id_of_its_own(tmp_path: Path) -> None:

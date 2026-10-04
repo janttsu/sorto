@@ -107,6 +107,36 @@ def parse_classification(text: str) -> Classification:
     )
 
 
+def classification_schema(ids: list[str], categories: list[str]) -> dict[str, Any]:
+    """The answer's JSON schema, for a server that constrains decoding to it (Ollama's ``format``).
+
+    ``jd_id`` can only be an ID of the outline or "new", and ``category`` only
+    one of its categories: an ID the model makes up cannot even be written.
+    The properties are in the order the model is meant to decide them in.
+    """
+    text = {"type": "string"}
+    return {
+        "type": "object",
+        "properties": {
+            "summary": text,
+            "label": text,
+            "rule": text,
+            "own_media": {"type": "boolean"},
+            "category": {"type": "string", "enum": [*categories, "none"]},
+            "jd_id": {"type": "string", "enum": [*ids, "new"]},
+            "new_id_category": text,
+            "new_id_name": text,
+            "subfolder": text,
+            "new_filename": text,
+            "confidence": {"type": "number"},
+            "reason": text,
+            "needs_user": {"type": "boolean"},
+        },
+        "required": ["summary", "label", "rule", "own_media", "category", "jd_id", "new_id_category",
+                     "new_id_name", "subfolder", "new_filename", "confidence", "reason", "needs_user"],
+    }
+
+
 def packet_user_message(packet: AnalysisPacket, *, max_chars: int = 16000, rules: bool = False) -> str:
     body = json.dumps(packet.to_llm_dict(), ensure_ascii=False, indent=None)
     msg = f"Analyze this file and choose its Johnny.Decimal ID.\n\nFILE PACKET:\n{body}\n"
@@ -219,7 +249,10 @@ NEW_ID_SYSTEM = (
     "A file got an answer that names no existing Johnny.Decimal ID, so it gets a new ID of its own. You only "
     "name it: a short topic of one to four words, in the same language and style as the IDs listed. The name "
     "is the subject that more files like this one will share (a person, an organisation, a project, a device, "
-    "an event). It is never a file name, a number, a date, the name of a category or the kind of file (\"photo\", \"log\"). If the "
+    "an event). Johnny.Decimal IDs are broad: name the kind of thing the ID will hold, either descriptively "
+    "(\"Electricity, gas and water\") or simply (\"Moving house\"); a single trip, project or model is a "
+    "subfolder of such an ID, so for one trip name the ID after trips, not after that one trip. "
+    "It is never a file name, a number, a date, the name of a category or the kind of file (\"photo\", \"log\"). If the "
     "user's rules say what such files are to be grouped under, name it after that: one rule, one ID, so "
     "use the rule's subject and not this file's own details. If an ID listed already is exactly this "
     "topic, answer its name as it is listed and the file joins it. Do not write a number. "
@@ -247,7 +280,8 @@ EXISTING_HOME_SYSTEM = (
     "whether one of the category's existing IDs already holds this kind of file, so the topic fits as a "
     "folder named after it inside that ID. A new ID is right only when the topic is a different kind of "
     "thing from what every listed ID holds; one more project, model, item or person of a kind an ID already "
-    "holds belongs in that ID. Judge by each ID's name, description and subfolders. If the user's rules say "
+    "holds belongs in that ID. Johnny.Decimal IDs are broad on purpose: one ID such as \"All short trips\" holds "
+    "a lifetime of trips, each in its own dated subfolder. Judge by each ID's name, description and subfolders. If the user's rules say "
     "in so many words that this topic gets an ID of its own, answer \"none\". A rule that only asks for "
     "folders named after what the files are is met by a folder inside the existing ID. Reply with JSON only: "
     '{"id": "NN.NN" or "none", "confidence": 0.0-1.0, "reason": "at most 20 words, in English"}.'
@@ -274,10 +308,60 @@ def parse_existing_home_answer(text: str) -> tuple[str, float, str]:
     return (m.group(0) if m else "none"), confidence, str(data.get("reason") or "")[:300]
 
 
+FSCK_SYSTEM = (
+    "You review one category of a Johnny.Decimal archive: its IDs (folders), what the notes say about them, "
+    "their subfolders and samples of the files in them. Judge by the files, not only by the names. Answer only "
+    "about IDs listed in the question, and only what the evidence clearly shows; empty lists are a fine answer.\n"
+    "- descriptions: for each ID marked NO DESCRIPTION that holds files, one short sentence (at most 15 words) "
+    "on what it holds, in the same language as the ID names. Not a list of file names.\n"
+    "- names: for each NAME DIFFERENCE, which name fits the files: \"folder\" or \"note\".\n"
+    "- renames: an ID whose folder name says nothing about what it holds (a number, a file name, a single "
+    "date); suggest a short name in the language of the other IDs.\n"
+    "- duplicates: IDs, or an ID and another ID's subfolder, that hold the same topic and should be one place. "
+    "Johnny.Decimal IDs are broad: several IDs that are each one trip, one event or one model of the same kind "
+    "are duplicates of one broad ID with a dated or named subfolder per item.\n"
+    "- misplaced: an ID whose files clearly belong to the theme of another category listed (give its number).\n"
+    "Reply with JSON only: {\"descriptions\": [{\"id\": \"NN.NN\", \"description\": \"...\"}], "
+    "\"names\": [{\"id\": \"NN.NN\", \"right\": \"folder\" or \"note\", \"reason\": \"...\"}], "
+    "\"renames\": [{\"id\": \"NN.NN\", \"name\": \"...\", \"reason\": \"...\"}], "
+    "\"duplicates\": [{\"ids\": [\"NN.NN\", \"NN.NN or NN.NN/subfolder\"], \"reason\": \"...\"}], "
+    "\"misplaced\": [{\"id\": \"NN.NN\", \"category\": \"NN\", \"reason\": \"...\"}]}. "
+    "Every reason at most 20 words, in English."
+)
+
+
+FSCK_STRUCTURE_SYSTEM = (
+    "You are reviewing the whole structure of a Johnny.Decimal archive: areas (NN-NN), categories (NN) and "
+    "IDs (NN.NN), with what each holds and how many files, and what a review of each category found. Think it "
+    "through from every angle: overlapping or duplicated topics, categories that are too thin or too crowded, "
+    "IDs in the wrong place, names that do not say what a folder holds, numbering that has drifted (gaps, IDs "
+    "made one per item where one ID with subfolders would do), and whether a simpler structure, or a bigger "
+    "change to the numbering, would serve the owner better. Johnny.Decimal rules: at most 10 areas, at most 10 "
+    "categories per area, at most 100 IDs per category; NN.00 holds the category's notes and NN.01 is its inbox. "
+    "Johnny.Decimal principles to weigh: prefer fewer, broader categories (overlapping ones such as investments, "
+    "budget and savings belong in one, money); a category collects one kind of work; IDs are broad and hold "
+    "every item of one kind, each item in a subfolder with a pattern (date first for trips and events, a name "
+    "for people and suppliers, or 10 to 90); no ad-hoc, randomly named subfolders; creating an area or a "
+    "category deserves friction, creating an ID is cheap; NN.00 to NN.09 are each category's system IDs (.00 "
+    "notes, .01 inbox, .09 archive). The owner's own conventions, visible in the tree, win over these "
+    "principles: do not propose renumbering just to follow them. "
+    "Use the words exactly: an area is NN-NN, a category is NN, an ID is NN.NN; merging IDs is not merging "
+    "categories. Never propose a number that is already in use for something else, and never invent one: "
+    "for a new ID or category use the number given under FREE NUMBERS, and "
+    "name the existing folders by the numbers and names shown. Only folders listed in the tree exist. "
+    "Propose only changes the evidence supports, most valuable first; it is fine to propose few or none. "
+    "Each proposal: a short title; what to change, concretely, naming the folders; why; the steps; and the "
+    "effort (small, medium or large). Write in English. Reply with JSON only: {\"proposals\": [{\"title\": "
+    "\"...\", \"change\": \"...\", \"why\": \"...\", \"steps\": [\"...\"], \"effort\": \"small|medium|large\"}]}."
+)
+
+
 NEW_CATEGORY_SYSTEM = (
     "No existing Johnny.Decimal category fits a new topic, so a new category may be created for it. Choose "
     "the existing area it belongs in and name the category: the broader theme that this topic and similar "
-    "later topics share, one to three words, in the same language and style as the categories listed. It "
+    "later topics share. Johnny.Decimal prefers fewer, broader categories, and a new one deserves a moment's "
+    "thought: if the topic would fit an existing category after all, answer area \"none\" rather than make an "
+    "overlapping one. Name it in one to three words, in the same language and style as the categories listed. It "
     "must not repeat or overlap an existing category, and it is not the topic's own name unless nothing "
     "broader makes sense. The topic itself becomes an ID inside the new category, so a rule that asks for an "
     "ID of its own is already met: you only place and name the category. The area must be one of the areas "
@@ -381,6 +465,8 @@ class OpenAICompatClient:
         self.max_tokens = max_tokens
         self.timeout_sec = timeout_sec
         self.reasoning_effort = reasoning_effort
+        # Set by the engine from the outline (classification_schema): the IDs an answer may name.
+        self.answer_schema: dict[str, Any] | None = None
         self.max_retries = max(0, int(max_retries))
         self.last_latency_s: float | None = None
         self.last_error: str | None = None
@@ -434,7 +520,7 @@ class OpenAICompatClient:
             "options": options,
         }
         if use_json_format:
-            body["format"] = "json"
+            body["format"] = payload.get("schema") or "json"
         if self._send_reasoning:
             body["think"] = self.reasoning_effort != "none"
         keep = keep_alive_value(self.keep_alive)
@@ -510,7 +596,7 @@ class OpenAICompatClient:
     def _post(self, payload: dict[str, Any], *, use_json_format: bool) -> str:
         if self.is_ollama():
             return self._post_native(payload, use_json_format=use_json_format)
-        body = dict(payload)
+        body = {k: v for k, v in payload.items() if k != "schema"}  # the schema is for Ollama's own API
         if use_json_format:
             body["response_format"] = {"type": "json_object"}
         if self._send_reasoning:
@@ -545,7 +631,12 @@ class OpenAICompatClient:
         return content
 
     def _complete(
-        self, messages: list[dict[str, Any]], *, temperature: float | None = None, max_tokens: int | None = None
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        schema: dict[str, Any] | None = None,
     ) -> str:
         payload: dict[str, Any] = {
             "model": self.model,
@@ -553,6 +644,8 @@ class OpenAICompatClient:
             "max_tokens": max_tokens or self.max_tokens,
             "messages": messages,
         }
+        if schema:
+            payload["schema"] = schema
         if self.top_p is not None:
             payload["top_p"] = self.top_p
         last_err: Exception | None = None
@@ -603,13 +696,13 @@ class OpenAICompatClient:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_content(user, images)},
         ]
-        text = self._complete(messages)
+        text = self._complete(messages, schema=self.answer_schema)
         try:
             return parse_classification(text)
         except (ValueError, json.JSONDecodeError):
             messages.append({"role": "assistant", "content": text})
             messages.append({"role": "user", "content": REPAIR_USER})
-            text2 = self._complete(messages)
+            text2 = self._complete(messages, schema=self.answer_schema)
             try:
                 return parse_classification(text2)
             except (ValueError, json.JSONDecodeError) as e:
@@ -695,6 +788,35 @@ class OpenAICompatClient:
         except (ValueError, json.JSONDecodeError) as e:
             raise LLMParseError(f"existing ID answer was not valid JSON: {e}") from e
 
+    def review_category(self, question: str) -> dict[str, Any]:
+        """``sorto fsck``: one category's IDs, notes and file samples reviewed; see FSCK_SYSTEM."""
+        messages: list[dict[str, Any]] = [
+            {"role": "system", "content": FSCK_SYSTEM},
+            {"role": "user", "content": question + "\n\nReply with the JSON object only."},
+        ]
+        text = self._complete(messages, temperature=0.0, max_tokens=max(self.max_tokens, 2000))
+        try:
+            return extract_json_object(text)
+        except (ValueError, json.JSONDecodeError) as e:
+            raise LLMParseError(f"review answer was not valid JSON: {e}") from e
+
+    def review_structure(self, question: str) -> dict[str, Any]:
+        """``sorto fsck``: the whole tree reviewed once, with the model thinking it through; see FSCK_STRUCTURE_SYSTEM."""
+        messages: list[dict[str, Any]] = [
+            {"role": "system", "content": FSCK_STRUCTURE_SYSTEM},
+            {"role": "user", "content": question + "\n\nReply with the JSON object only."},
+        ]
+        saved = (self.reasoning_effort, self._send_reasoning)
+        self.reasoning_effort, self._send_reasoning = "high", True  # this one question is worth the thinking
+        try:
+            text = self._complete(messages, temperature=0.3, max_tokens=12000)
+        finally:
+            self.reasoning_effort, self._send_reasoning = saved
+        try:
+            return extract_json_object(text)
+        except (ValueError, json.JSONDecodeError) as e:
+            raise LLMParseError(f"structure review was not valid JSON: {e}") from e
+
     def invent_category(self, topic: str, summary: str, areas: str, rules: str = "") -> tuple[str, str, float, str]:
         """Last question before giving up on a new ID: a new category in an existing area, if any."""
         messages: list[dict[str, Any]] = [
@@ -745,6 +867,28 @@ class OpenAICompatClient:
             return {str(m.get("name")): m for m in r.json().get("models") or []}
         except (httpx.HTTPError, ValueError, TypeError):
             return {}
+
+    def model_catalog(self) -> list[dict[str, Any]]:
+        """Every model the server offers: name, and from Ollama also size, parameters, quantization, loaded."""
+        if self.is_ollama():
+            timeout = httpx.Timeout(8.0, connect=3.0)
+            with self._client(timeout) as client:
+                tags = client.get(self._native_url("/api/tags"))
+                ps = client.get(self._native_url("/api/ps"))
+            if tags.status_code < 400:
+                loaded = {m.get("name") for m in (ps.json().get("models") or [])} if ps.status_code < 400 else set()
+                out = []
+                for m in tags.json().get("models") or []:
+                    details = m.get("details") or {}
+                    out.append({
+                        "name": m.get("name", ""), "size": int(m.get("size") or 0),
+                        "parameters": str(details.get("parameter_size") or ""),
+                        "quantization": str(details.get("quantization_level") or ""),
+                        "loaded": m.get("name") in loaded,
+                    })
+                return sorted((m for m in out if m["name"]), key=lambda m: m["name"])
+        return [{"name": n, "size": 0, "parameters": "", "quantization": "", "loaded": False}
+                for n in sorted(self.list_models())]
 
     def list_models(self) -> list[str]:
         timeout = httpx.Timeout(8.0, connect=3.0)
@@ -831,3 +975,6 @@ class FakeLLMClient:
 
     def list_models(self) -> list[str]:
         return ["fake"]
+
+    def model_catalog(self) -> list[dict[str, Any]]:
+        return [{"name": "fake", "size": 0, "parameters": "", "quantization": "", "loaded": False}]

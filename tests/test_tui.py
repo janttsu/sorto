@@ -88,29 +88,19 @@ def test_tui_confirm_keep_leaves_file(inbox, target, cfg) -> None:
     assert (inbox / "invoice-june.txt").exists()
 
 
-def test_tui_shows_time_left_and_switches_model(inbox, target, cfg, monkeypatch) -> None:
-    from sorto.llm import FakeLLMClient
+def test_tui_shows_time_left(inbox, target, cfg) -> None:
 
     for i in range(4):
         (inbox / f"invoice-{i}.txt").write_text(f"Invoice {i}", encoding="utf-8")
     cfg.follow = True
-    cfg.models = ["fake", "fake-small"]
-
-    def fake_make_llm(c, *, fake=False):
-        llm = FakeLLMClient(routes={"invoice": "13.13"})
-        llm.model = c.llm_model
-        return llm
-
-    monkeypatch.setattr("sorto.engine.make_llm", fake_make_llm)
     seen: dict[str, str] = {}
 
     async def script(app, pilot) -> None:
         seen["eta0"] = str(app.query_one("#eta", Static)._content)
-        await pilot.press("m")
         for _ in range(100):
             await pilot.pause(0.1)
             eta = str(app.query_one("#eta", Static)._content)  # redrawn every 0.4 s
-            if app.engine.model_name == "fake-small" and "nothing left" in eta:
+            if "nothing left" in eta:
                 break
         seen["eta1"] = str(app.query_one("#eta", Static)._content)
         seen["keys"] = str(app.query_one("#keys", Static)._content)
@@ -119,7 +109,7 @@ def test_tui_shows_time_left_and_switches_model(inbox, target, cfg, monkeypatch)
     _run_app(cfg, script)
     assert seen["eta0"].startswith("time left:")
     assert "nothing left" in seen["eta1"] or "scanning" in seen["eta1"]
-    assert "fake-small" in seen["keys"]
+    assert " m " not in seen["keys"]
 
 
 def test_tui_browses_older_files_in_the_history(inbox, target, cfg) -> None:

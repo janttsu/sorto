@@ -113,7 +113,6 @@ class HelpScreen(ModalScreen[None]):
                     "  d        toggle dry-run (only when idle)",
                     "  Enter/y  --confirm: move the shown file",
                     "  n        --confirm: keep it where it is",
-                    "  m        switch model (when more than one is configured)",
                     "  ↓ / j    history: one file older (PgDn: ten)",
                     "  ↑ / k    history: one file newer (PgUp: ten)",
                     "  End      history: the oldest file of this run",
@@ -186,7 +185,6 @@ class SortoApp(App[None]):
         Binding("p", "toggle_pause", "Pause"),
         Binding("d", "toggle_dry", "Dry-run"),
         Binding("o", "open_log", "Log"),
-        Binding("m", "switch_model", "Model"),
         Binding("enter", "confirm_move", "Move", show=False),
         Binding("y", "confirm_move", "Move", show=False),
         Binding("n", "confirm_keep", "Keep", show=False),
@@ -238,7 +236,6 @@ class SortoApp(App[None]):
         cfg = self.engine.cfg
         return (
             self.KEYS
-            + ("  m model" if len(cfg.models) > 1 else "")
             + ("  Enter/y move  n keep" if cfg.confirm else "")
         )
 
@@ -374,23 +371,6 @@ class SortoApp(App[None]):
 
     def action_confirm_keep(self) -> None:
         self.engine.decide("keep")
-
-    def action_switch_model(self) -> None:
-        keys = self.query_one("#keys", Static)
-        if len(self.engine.cfg.models) < 2:
-            keys.update("only one model is configured (add more with [llm] models = [...])")
-            return
-        keys.update("switching model… it is used from the next file on")
-
-        def _switch() -> None:
-            try:
-                model = self.engine.switch_model()
-                msg = f"model → {model} from the next file   {self._keys_text()}"
-            except Exception as e:  # noqa: BLE001 - shown to the user
-                msg = f"could not switch model: {e}"
-            self.call_from_thread(keys.update, msg)
-
-        threading.Thread(target=_switch, name="sorto-switch", daemon=True).start()
 
     def action_toggle_dry(self) -> None:
         new_val = not self.engine.cfg.dry_run

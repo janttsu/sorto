@@ -145,8 +145,8 @@ per new ID, about a minute; files that go to existing IDs are not affected.
 
 ### 1.6 Compare two models on the same file: proposal
 
-`m` switches models for the *next* files, so a comparison sees different
-files. A `c` key could re-ask the other model about the file just shown and
+The model is chosen at the start of a run, so comparing two means two runs
+over different files. A `c` key could re-ask the other model about the file just shown and
 display both answers side by side: summary, ID, confidence and time. This
 costs one reload each way on this GPU, so it is best as an explicit action,
 not a mode.
@@ -268,7 +268,7 @@ with the archive as TARGET.
 - The place of a GPS position comes from a city list shipped with sorto.
 - A time-left estimate from the measured pace per kind of file, with a
   finishing time.
-- Switching models on the fly in the TUI (`m`), per-model answer times, and
+- Choosing the model at the start (`--model`, or a list in the TUI), per-model answer times, and
   context size read from the Ollama tag.
 - `sorto doctor` loads every configured model once, checks it answers, and
   reports load time, GPU share and whether switching needs a reload.

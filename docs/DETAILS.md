@@ -148,6 +148,12 @@ Photos and videos you shot yourself are always filed by capture date: `51.11 Pho
 date_folder_ids = ["51.11 Photos", "54.11 Own videos"]
 ```
 
+## How the model is asked
+
+Every file gets one question with the outline (cached by the model server for the whole run) and the file's packet. The instructions follow Johnny.Decimal: decide the category first, by its theme, then the ID in it; IDs are broad, so one more trip, project or model goes into the ID that holds that kind of thing, in a subfolder named with a pattern (date first for trips and events); `NN.00`–`NN.09` are each category's system IDs, of which only the inbox `NN.01` takes files. Four short invented examples show the difference between an existing ID with a subfolder, a new ID, and an inbox.
+
+With Ollama the answer is constrained to a JSON schema: `jd_id` can only be one of the outline's IDs or `"new"`, and `category` one of its categories, so an ID the model makes up cannot even be written. Other servers get plain JSON mode. The packet leaves out what did not help in testing: the hash, a second type field, and the hex dump and magic string of files whose type is known.
+
 ## It respects your existing organization
 
 sorto reads the structure of the target at run time. Nothing about any particular tree is hardcoded.
@@ -164,7 +170,7 @@ sorto reads the structure of the target at run time. Nothing about any particula
   5. creates the folder (`13.14 Newsletters`), re-checking right before that the number is still free, logs it in `progress.jsonl`, and re-reads the tree;
   6. only then moves the file in. Later files see the new ID like any other.
 
-  **The name is settled in one focused question.** Before those steps, sorto asks the structure model (see below) what the new ID should be called. The question shows the categories with their IDs, your rules, the file's summary and the model's answer, including a name it may have suggested. This is done for every new ID. Names made up file by file drift: in testing, one rule ("everything about X goes under its own ID") produced four differently named IDs in six files. Asked this way, the model names the ID after the rule's subject, and if exactly one ID in the target already has that name, the file goes there. Answering with the name of an existing ID joins it. A name without letters (`07`, `2234489_5825`) is not accepted, and neither is a name that only repeats its category (`51.20 Pictures` inside `51 Pictures`); the file then stays where it is.
+  **The name is settled in one focused question.** Before those steps, sorto asks the structure model (see below) what the new ID should be called. The question shows the categories with their IDs, your rules, the file's summary and the model's answer, including a name it may have suggested. This is done for every new ID. Names made up file by file drift: in testing, one rule ("everything about X goes under its own ID") produced four differently named IDs in six files. Asked this way, the model names the ID after the rule's subject, and if exactly one ID in the target already has that name, the file goes there. Answering with the name of an existing ID joins it. A name without letters (`07`, `1048576_0042`) is not accepted, and neither is a name that only repeats its category (`51.20 Pictures` inside `51 Pictures`); the file then stays where it is.
 
   **When the answer is not an ID at all.** Local models sometimes answer with a number that does not exist (`51.02`), an area (`90-99 Archive`) or a path (`90-99 Archive/93 Mail`), without saying what the new ID should be called. This is treated as a request for a new ID: the same question gives it a name, and the steps above place and number it. If the model gives no usable name, the file stays where it is.
 
@@ -198,9 +204,9 @@ sorto --help
 
 The default is `qwen3.6:35b-a3b` on a stock Ollama at `http://127.0.0.1:11434/v1`. Use `--llm-url` / `[llm] url` for another local server, or let sorto take it from your Grok Build profile (below).
 
-### Two models, switchable on the fly
+### Choosing the model
 
-`[llm] models = [...]` lists the models the TUI can switch between. Press `m`: the file being analyzed finishes with the current model, the next one loads in the background, and every later file uses it. The title bar shows the active model. The progress line compares the average answer time per model (`qwen3.6:35b-a3b 10.2s×14 | qwen3.5:9b-16k 3.6s×9`), and each analysis shows which model wrote it and how long it took. That way you can judge speed and accuracy on your own files.
+`--model NAME` (or `--llm-model`) says which local model reads the files. Without it, the TUI asks first: it lists every model the local server has, with size, parameters and quantization, marks the configured default and the one already in memory, and filters as you type; `Enter` uses the model, `Esc` leaves without running. Without a terminal (`--no-tui`, a pipe, a timer) the configured `[llm] model` is used. `sorto fsck` asks the same way for the model that reviews the tree (default: `structure_model`). The title bar shows the active model, and each analysis shows which model wrote it and how long it took. `[llm] models = [...]` lists the models `sorto doctor` loads and checks.
 
 Whichever model reads the files, new IDs and categories are named and placed by `[llm] structure_model` (default `qwen3.6:35b-a3b`); see [It respects your existing organization](#it-respects-your-existing-organization).
 
@@ -307,7 +313,7 @@ Each file goes through the **NOW** panel: what it is, the English analysis, the 
 
 **Browsing the history.** `↓` (or `j`) shows the next older file in the lower panel, with its full analysis, destination and reason; `↑` (or `k`) goes back towards the newest. `PgDn`/`PgUp` step ten files, `End` jumps to the oldest. The shown file is marked `▶` in the HISTORY list, which scrolls with it, and the panel title says where you are (`HISTORY 14 of 230`). Files that finish meanwhile do not move the selection. `Esc` or `Home` returns to following the latest file. Earlier runs are in the run logs (see [What sorto remembers](#what-sorto-remembers)).
 
-Keys: `q` quit (finishes the current file), `p` pause, `d` dry-run toggle (only when idle), `m` switch model, `o` progress log, `↑`/`↓` history, `?` help, and with `--confirm` `Enter`/`y` to move or `n` to keep.
+Keys: `q` quit (finishes the current file), `p` pause, `d` dry-run toggle (only when idle), `o` progress log, `↑`/`↓` history, `?` help, and with `--confirm` `Enter`/`y` to move or `n` to keep.
 
 **Time left** is estimated from the pace so far. sorto measures how long each file really took (analysis and move, not the time you spend answering `--confirm`), separately for photos, videos, documents and other files. It multiplies that by what is still waiting of each kind, for example `time left: ~3h 12m left for 812 files at 14.2 s/file (pace of the last 37 files), done ≈ 18:42`. The first answer usually includes loading the model and is left out of the pace. While the scan is still finding files, the line says so, because the total can still grow.
 
@@ -322,6 +328,35 @@ Keys: `q` quit (finishes the current file), `p` pause, `d` dry-run toggle (only 
 6. **Structure grows only by sorto's own numbering.** Areas are never created. A new ID gets the next free number of its category, and a new category, made only when no existing one fits, gets the next free number of its area; both are created before the file moves (see above). The model never chooses a number or a path. Low confidence, `needs_user` answers and new IDs that cannot be placed leave the file in the source with the reason shown.
 7. **Never extract archives.** DOCX and ODT text is read in memory. Nothing is unpacked to disk.
 8. **Crash-safe.** A move is written to `progress.jsonl` (fsync'd) before the row is marked done. A clone or copy is written to a hidden `.name.sorto-partial-…` file and gets its real name only when it is complete, so a crash never leaves a half-written file under a real name. On the next start an interrupted move is finished (if the copy is byte-identical to the original), reset, or flagged when the two differ, in which case nothing is deleted. Leftover temp files are removed.
+
+## Checking the tree: `sorto fsck`
+
+`sorto fsck TARGET` checks the Johnny.Decimal tree and its JDex notes, and offers to bring the notes in line with the folders. The folders on disk are the truth. Nothing is written unless you accept it.
+
+**The model reviews the tree first, every time.** Before anything is proposed, the structure model (`structure_model`, `qwen3.6:35b-a3b` by default) goes through the tree. The TUI shows a progress bar, the phase, the category it is on, the time so far and about how long is left:
+
+1. **Scanning:** every ID's files are counted and a dozen of their names sampled, from several subfolders.
+2. **Category by category:** one question per category, with its IDs, what the notes say about them, their subfolders, file counts and samples, and the other categories' names. The model writes a one-line description for each ID that has none, says which name fits the files where a note and a folder disagree, and points out IDs whose names say nothing, IDs that duplicate each other or another ID's subfolder, and IDs that belong in another category. Answers about IDs that were not asked about are dropped.
+3. **The whole structure:** one more question with the whole tree and what the category reviews found. Here the model thinks before it answers. It looks at overlaps, categories that are too thin or too crowded, numbering that has drifted, and whether a simpler structure or a bigger change to the numbering would serve better, and proposes changes with what, why, the steps and the effort.
+
+The descriptions go into the proposed note changes, and a note's name is kept where the model finds the folder's name to be the wrong one (that folder is listed instead). Everything about folders (the structure proposals, duplicates, misplaced IDs, better names) is shown as text in English, in rows of its own at the top of the list, above the problems and the notes to change: sorto never renames or moves a folder. Answers are cached in `~/.sorto/fsck-cache/`, so a second run over an unchanged tree only asks about what changed. On a tree of about 150 IDs in 30 categories the review takes a few minutes. Without the model, `sorto fsck` stops and says so. Once the review is done, the TUI lists every file to change, with a mark for what became of it (`·` waiting, `✓` written, `✗` skipped, `!` could not be written), and shows the selected file's reasons and diff in colour: additions green, removals red. `y` writes the file shown, `n` skips it, `e` opens the proposal in `$EDITOR` first, `↑`/`↓` move, `q` stops; the first row lists the problems that are only reported. `--no-tui` asks about each file as plain text instead. Run without a terminal (from a timer, in a pipe), it only reports, without colours. `--yes` writes every proposed change without asking.
+
+What it proposes, per note:
+
+- **Missing entries.** Every ID of a category should be listed in that category's own note (a note in `31.00 JDex/` is responsible for category 31). Missing ones are added in number order, in the style of the note's other entries: a row in the table that has a "Name" column, or a list item written like its neighbours.
+- **Stale entries.** An entry whose ID is not on disk is removed; if a folder of the same name exists under another number of the same category, the entry gets that number instead.
+- **Wrong names.** An entry whose name differs from the folder's gets the folder's name. A note may add words ("Models (3D prints)" for "Models"); that is not a difference.
+- **Missing notes.** A category without a note gets one, listing its IDs, together with its `NN.00` and `NN.01 Inbox` folders if they are missing.
+
+Only entry lines change: a list item that starts with the ID, or a table row whose first cell is the ID. Everything else in a note (headings, prose, history such as "moved here from 06.11", a list item that points elsewhere with an arrow) stays exactly as it is; IDs it mentions that no longer exist are reported. In a table only the column headed "Name" (or "Nimi") counts as the name, so a table of sources is left alone. A note that says it is generated ("generated", "do not edit") is never changed; what it lacks is reported, to be fixed in whatever generates it.
+
+Reported only, never fixed, because they need a human: an ID inside the wrong category, a category outside its area, two folders with the same number, and IDs whose name says nothing about what they hold (`51.15 2231_0041`). Folders are never renamed or moved.
+
+Before a note is changed, its previous version is copied to `~/.sorto/fsck-backups/<date>_<time>/`. A note that changed on disk after it was checked is not written. The exit status works like fsck's: 0 everything agrees, 1 changes were written, 4 something was left (declined or report-only); 1 and 4 combine to 5.
+
+`sorto run` makes the same check, read-only, when it starts, and says in one line (also in the run log) when the notes and the folders disagree. It never writes to a note itself.
+
+The descriptions the model sees come from these notes: list items and table rows. A category's own note describes its IDs first; a tree-wide index only fills in IDs left without a description.
 
 ## What sorto remembers
 

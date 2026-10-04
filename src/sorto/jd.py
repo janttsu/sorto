@@ -28,6 +28,9 @@ AREA_RE = re.compile(r"^(\d{2})-(\d{2})\s+(.+)$")
 CATEGORY_RE = re.compile(r"^(\d{2})\s+(.+)$")
 ID_RE = re.compile(r"^(\d{2})\.(\d{2})\s+(.+)$")
 JDEX_LINE_RE = re.compile(r"^\s*(?:[-*+]\s*)?`?(\d{2}\.\d{2})`?\s+(.+?)\s*$")
+JDEX_LIST_RE = re.compile(r"^\s*[-*+]\s+(\d{2}\.\d{2})(?!\d)\s*(.*?)\s*$")  # "- 13.13 Invoices — …" (backticks removed)
+JDEX_ROW_RE = re.compile(r"^\s*\|(.*)\|\s*$")  # "| 13.13 | Invoices | … |"
+NOTE_CATEGORY_RE = re.compile(r"^(\d{2})\.00(?:\s|$)")  # the NN.00 folder a note lives in
 YEAR_RE = re.compile(r"^(19|20)\d{2}$")
 YEAR_MONTH_RE = re.compile(r"^(19|20)\d{2}-(0[1-9]|1[0-2])$")
 
@@ -235,7 +238,7 @@ def clean_id_name(value: str) -> str:
     name = re.sub(r"[\x00-\x1f/\\]+", " ", name)
     name = re.sub(r"\s+", " ", name).strip(" .-–—:")
     if sum(c.isalpha() for c in name) < 2:
-        return ""  # "07" or "2234489_5825" is a number, not a topic
+        return ""  # "07" or "1048576_0042" is a number, not a topic
     return name[:MAX_ID_NAME].strip()
 
 
@@ -556,6 +559,95 @@ def scan_jd(target: Path, *, exclude: list[Path] | None = None) -> JDIndex:
     return index
 
 
+@dataclass
+class JDexEntry:
+    """One line of a JDex note that lists an ID: a list item or a table row starting with the ID."""
+
+    jd_id: str
+    name: str
+    description: str
+    table: bool
+
+
+def parse_jdex_entry(line: str, *, strict: bool = True) -> JDexEntry | None:
+    """The ID entry on *line*, or None.
+
+    Strict: only a list item (``- 13.13 Invoices — …``, backticks allowed) or a
+    table row whose first cell is the ID counts; prose that merely mentions an
+    ID ("moved here from 13.13") is not an entry. Not strict: a line that
+    starts with the ID without a list marker counts too.
+    """
+    m = JDEX_ROW_RE.match(line)
+    if m:
+        cells = [c.strip().strip("`").strip() for c in m.group(1).split("|")]
+        if len(cells) >= 2 and re.fullmatch(r"\d{2}\.\d{2}", cells[0]):
+            return JDexEntry(cells[0], cells[1], " — ".join(c for c in cells[2:] if c), table=True)
+        return None
+    plain = line.replace("`", "")
+    m = JDEX_LIST_RE.match(plain)
+    if m is None and not strict:
+        m = JDEX_LINE_RE.match(plain)
+    if m is None:
+        return None
+    rest = m.group(2).strip()
+    name, desc = rest, ""
+    for sep in (" — ", " – ", " - ", ": "):
+        if sep in rest:
+            name, desc = (part.strip() for part in rest.split(sep, 1))
+            break
+    return JDexEntry(m.group(1), name, desc, table=False)
+
+
+TABLE_SEPARATOR_RE = re.compile(r"^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$")
+NAME_HEADERS = {"name", "nimi", "title", "otsikko"}
+REFERENCE_RE = re.compile(r"→|->|⇒|←|<-")
+
+
+def iter_jdex_entries(text: str, *, strict: bool = True):
+    """(line number, entry) for every ID entry of a note; table rows are read by their header.
+
+    In a table only the column headed "Name" (or "Nimi") is the name; a table
+    with no such column has entries without names (a list of sources, say).
+    In strict mode a list item that points with an arrow ("25.13 Estate →
+    12.16"), or names another ID before its description ("12.11 is empty;
+    see 12.13"), is a cross-reference, not an entry. Another ID in the
+    description ("— moved here from 06.11") is fine.
+    """
+    lines = text.splitlines()
+    header: list[str] | None = None
+    for n, line in enumerate(lines):
+        if not JDEX_ROW_RE.match(line):
+            header = None
+            entry = parse_jdex_entry(line, strict=strict)
+            if entry is not None and strict:
+                if REFERENCE_RE.search(line) or re.search(r"(?<![\d.])\d{2}\.\d{2}(?![\d.])", entry.name):
+                    continue
+            if entry is not None:
+                yield n, entry
+            continue
+        if n + 1 < len(lines) and TABLE_SEPARATOR_RE.match(lines[n + 1]) and parse_jdex_entry(line) is None:
+            header = [c.strip().lower() for c in JDEX_ROW_RE.match(line).group(1).split("|")]
+            continue
+        if TABLE_SEPARATOR_RE.match(line):
+            continue
+        entry = parse_jdex_entry(line)
+        if entry is None:
+            continue
+        if header is not None:
+            cells = [c.strip().strip("`").strip() for c in JDEX_ROW_RE.match(line).group(1).split("|")]
+            name_col = next((i for i, h in enumerate(header) if h in NAME_HEADERS), None)
+            name = cells[name_col] if name_col is not None and name_col < len(cells) else ""
+            rest = [c for i, c in enumerate(cells) if i not in (0, name_col) and c]
+            entry = JDexEntry(entry.jd_id, name, " — ".join(rest), table=True)
+        yield n, entry
+
+
+def note_category(path: Path) -> str:
+    """The category a JDex note belongs to: ``31`` for a note in ``31.00 JDex/``, else ""."""
+    m = NOTE_CATEGORY_RE.match(path.parent.name)
+    return m.group(1) if m else ""
+
+
 def _md_files(path: Path) -> list[Path]:
     try:
         with os.scandir(path) as it:
@@ -569,23 +661,34 @@ def _md_files(path: Path) -> list[Path]:
 
 
 def _apply_jdex_descriptions(index: JDIndex, files: list[Path]) -> None:
+    """Descriptions from the JDex notes: list items and table rows.
+
+    A category's own note (in its ``NN.00`` folder) describes its IDs first;
+    a note elsewhere, such as a tree-wide index, only fills in IDs left
+    without a description. A tree-wide index often says only where things
+    came from, while the category's note says what they are.
+    """
+    texts = []
     for path in files:
         try:
             if path.stat().st_size > MAX_JDEX_BYTES:
                 continue
-            text = path.read_text(encoding="utf-8", errors="replace")
+            texts.append((note_category(path), path.read_text(encoding="utf-8", errors="replace")))
         except OSError:
             continue
-        for line in text.splitlines():
-            m = JDEX_LINE_RE.match(line)
-            if not m:
-                continue
-            item = index.items.get(m.group(1))
-            if item is None or item.description:
-                continue
-            desc = _description_from(m.group(2), item.name)
-            if desc:
-                item.description = desc
+    for own_pass in (True, False):
+        for category, text in texts:
+            for _n, entry in iter_jdex_entries(text, strict=False):
+                item = index.items.get(entry.jd_id)
+                if item is None or item.description or (own_pass and entry.jd_id[:2] != category):
+                    continue
+                if entry.table:
+                    desc = entry.description
+                else:
+                    desc = _description_from(f"{entry.name} — {entry.description}" if entry.description
+                                             else entry.name, item.name)
+                if desc:
+                    item.description = desc
 
 
 def _description_from(rest: str, name: str) -> str:

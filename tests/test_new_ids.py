@@ -179,7 +179,7 @@ def test_a_name_that_already_exists_in_the_category_is_reused(inbox: Path, targe
     assert snap.history[0].jd_id == "13.13" and snap.history[0].new_id == ""
 
 
-@pytest.mark.parametrize("answer", [("", "no idea"), ("07", "a number"), ("13.20 2234489_5825", "junk")])
+@pytest.mark.parametrize("answer", [("", "no idea"), ("07", "a number"), ("13.20 1048576_0042", "junk")])
 def test_no_usable_name_even_when_asked_keeps_the_file(inbox: Path, target: Path, cfg, answer) -> None:
     (inbox / "digest.eml").write_text("weekly digest", encoding="utf-8")
     snap = make_engine(cfg, llm=_Namer(_answer("13.77").handler, answer=answer)).run_until_idle(timeout=30)
@@ -210,7 +210,7 @@ def test_naming_question_sees_the_users_rules_and_a_name_that_came_with_the_answ
 
 
 def test_number_only_names_are_not_names() -> None:
-    assert clean_id_name("07") == "" and clean_id_name("2234489_5825") == "" and clean_id_name("51.18 07") == ""
+    assert clean_id_name("07") == "" and clean_id_name("1048576_0042") == "" and clean_id_name("52.14 09") == ""
     assert clean_id_name("AI") == "AI" and clean_id_name("Trips 2024") == "Trips 2024"
 
 

@@ -71,6 +71,9 @@ class AnalysisPacket:
         extra = {
             k: v[:3000] if k == "document_text" else v[:1500] for k, v in self.extra_meta.items() if v
         }
+        # Lean on purpose: every token here is read for every file. The hash, a second type field and
+        # a hex dump of a file whose type is known cost a fifth of the time and changed no answer.
+        unknown = not self.mime or self.mime in ("application/octet-stream", "inode/x-empty")
         payload: dict[str, Any] = {
             "src_rel": self.src_rel,
             "filename": self.filename,
@@ -78,13 +81,13 @@ class AnalysisPacket:
             "size": self.size,
             "mtime": self.mtime_iso,
             "mime": self.mime,
-            "magic": self.magic,
-            "type_guess": self.type_guess,
-            "hex_preview": self.hex_preview,
-            "text_preview": self.text_preview,
-            "sha256": self.sha256,
-            "meaningless_name": self.meaningless_name,
         }
+        if unknown:
+            payload["magic"] = self.magic
+            if not self.text_preview:
+                payload["hex_preview"] = self.hex_preview
+        payload["text_preview"] = self.text_preview
+        payload["meaningless_name"] = self.meaningless_name
         if extra:
             payload["extra_meta"] = extra
         if self.duplicate_of:

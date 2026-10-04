@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+- `--model NAME` (also `--llm-model`) for `run`, `resume` and `fsck`. Without
+  it the TUI asks at the start which local model to use, listing every model
+  the server has with its size and marking the default and the one in memory.
+  The `m` key that switched models during a run is gone.
+- The model decides the way a Johnny.Decimal user does: first the category,
+  then the ID in it (a `category` field comes before `jd_id`). The prompt
+  now explains the standard zeros, broad IDs with one subfolder per trip,
+  project or model, subfolder names with a pattern (date first for trips and
+  events), and file names in the Johnny.Decimal style, with four short
+  examples. New IDs are named after the kind of thing they hold; a new
+  category needs a good reason.
+- With Ollama the answer is constrained to a JSON schema: `jd_id` can only
+  be an ID of the outline or "new", so a made-up ID cannot be written.
+- The file packet is leaner: no hash, no second type field, and no hex dump
+  or magic string when the type is known. Summary and reason are shorter.
+- `sorto fsck`: the structure review is told the Johnny.Decimal principles
+  and the next free numbers, and a proposal that names an ID that does not
+  exist gets a warning.
+- `sorto fsck TARGET` first has the big model review the tree (progress bar
+  and ETA): a description for every ID without one, which name is right
+  where a note and a folder disagree, duplicates, misplaced IDs, and, after
+  thinking about the whole tree, proposals for a simpler structure or bigger
+  changes to the numbering, shown as text. It then checks the structure and
+  the JDex notes:
+  it proposes missing entries, removes entries whose ID is gone (or gives them
+  their new number), fixes names, and creates missing category notes. Each
+  file's change is shown as a coloured diff in a TUI and written only when
+  accepted (`--no-tui` asks as plain text); `--yes` writes them all. Previous versions are kept in `~/.sorto/fsck-backups/`.
+  Generated notes, prose and folders are never changed; structure problems
+  are reported. `sorto run` says when the notes and folders disagree.
+- ID descriptions are also read from table rows, and a category's own note
+  describes its IDs before a tree-wide index does.
 - Before a new ID is made, sorto asks whether an ID of that category already
   holds this kind of file. If one does, the file goes into a folder named
   after the topic inside that ID instead (one more 3D model into the ID for

@@ -37,11 +37,12 @@ sorto resume SOURCE -t TARGET         # continue, and retry files that failed
 sorto run SOURCE -t TARGET --retry-kept   # also ask again about files an earlier run left for you
 sorto run SOURCE -t TARGET --clear-cache  # first forget cached model answers and folder decisions
 sorto status SOURCE -t TARGET         # counts, and where the index is
+sorto fsck TARGET                     # the model reviews the tree; accept fixes to the JDex notes file by file
 sorto rules                           # show / create your own rules
 sorto init DIR --dry-run              # propose a Johnny.Decimal structure for DIR
 ```
 
-TUI keys: `q` quit, `p` pause, `m` switch model, `↑`/`↓` browse the files already handled, `?` help, and with `--confirm` `Enter` to move or `n` to keep.
+Without `--model NAME` the TUI first asks which local model reads the files, listing every model your Ollama has. TUI keys: `q` quit, `p` pause, `↑`/`↓` browse the files already handled, `?` help, and with `--confirm` `Enter` to move or `n` to keep.
 
 ## Your own rules
 
@@ -77,7 +78,7 @@ Thumbs.db
 - **Every run writes its own log.** `~/.sorto/<pair>/runs/run-<date>_<time>.log` lists each file, what the analysis said about it and where it went. The path is printed when the run starts. At the end the run also says what it left in the source and why (duplicates, files left for you, git repositories, software packages).
 - **It remembers its progress** in `~/.sorto/`, so a second run continues where the first stopped. Delete the pair's `index.sqlite` there to start over.
 - **Moves are crash-safe,** and on btrfs they use instant reflink clones between subvolumes.
-- **Two models:** the default `qwen3.6:35b-a3b`, or a small `qwen3.5:9b` setup that is about 3× faster on a 6 GB GPU. Switch between them with `m`. New IDs and categories are decided by the default model either way.
+- **Any local model:** the default `qwen3.6:35b-a3b`, or for example a small `qwen3.5:9b` setup that is about 3× faster on a 6 GB GPU. Pick it with `--model`, or from the list the TUI shows at the start. New IDs and categories are decided by `structure_model` (the big one) either way.
 
 More: [settings, models, reorganizing, photos, rules and safety details](docs/DETAILS.md).
 
