@@ -73,6 +73,7 @@ from sorto.util import (
     estimate_tokens,
     git_workdir,
     human_size,
+    is_jdex_note,
     is_under_root,
     kept_whole,
     posix_rel,
@@ -122,6 +123,7 @@ class Engine:
         self.progress = ProgressLog(cfg.progress_path)
         self.run_log: RunLog | None = None  # started with the run, see start()
         self._whole_trees: dict[str, str] = {}  # source folders the scan left whole: rel -> what it is
+        self._jdex_notes: set[str] = set()  # the source's own JDex notes, left where they are
         self._leftovers: list[str] | None = None  # what stayed in the source, worked out once at the end
         self._leftovers_lock = threading.Lock()
         if llm is None:
@@ -725,6 +727,10 @@ class Engine:
                 break
             if reorg and not self._reorganize_candidate(rel):
                 continue
+            if not reorg and is_jdex_note(rel):
+                with self._lock:
+                    self._jdex_notes.add(rel)  # the source's own index: never sent to the model, never moved
+                continue
             try:
                 file_id, is_new = self.db.upsert_discovered(
                     src_rel=rel, abs_path=str(path), size=size, mtime_ns=mtime_ns, dev=dev, ino=ino
@@ -808,6 +814,11 @@ class Engine:
                 lines.append(f"{_plural(kinds[kind], one, many)} ({why})")
         with self._lock:
             trees = dict(self._whole_trees)
+            jdex = sorted(rel for rel in self._jdex_notes if (self.cfg.source / rel).is_file())
+        if jdex:
+            named = ", ".join(jdex[:3]) + (f" and {len(jdex) - 3} more" if len(jdex) > 3 else "")
+            lines.append(f"{_plural(len(jdex), 'JDex note', 'JDex notes')}: {named} (the index of a "
+                         "Johnny.Decimal tree; sorto never moves these)")
         for kind, plural, why in (
             ("git repository", "git repositories", "sorto never moves a repository; place it yourself"),
             ("software package", "software packages", "unpacked software is kept whole; place it yourself"),
@@ -844,8 +855,7 @@ class Engine:
         return bool(kept_whole(path))
 
     def _reorganize_candidate(self, rel: str) -> bool:
-        name = rel.rsplit("/", 1)[-1].lower()
-        if "jdex" in name:
+        if is_jdex_note(rel):
             return False  # the index notes describe the tree; they stay put
         if self.cfg.reorganize_scope and not rel.startswith(f"{self.cfg.reorganize_scope}/"):
             return False
@@ -1896,6 +1906,8 @@ class Engine:
         (the model, a junk pattern, a whole folder, a date folder).
         """
         cfg = self.cfg
+        if is_jdex_note(src_rel):
+            return "a JDex note (the index of a Johnny.Decimal tree): sorto never moves these"
         inside = whole_tree(cfg.source / src_rel, stop=cfg.source)
         if inside is not None:
             where = posix_rel(str(inside[0].relative_to(cfg.source.resolve())))

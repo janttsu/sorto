@@ -72,6 +72,20 @@ def is_git_repo(path: Path) -> bool:
 JD_FOLDER_RE = re.compile(r"^(?:\d{2}-\d{2}|\d{2}|\d{2}\.\d{2})\s")
 
 
+JDEX_NAME_RE = re.compile(r"(?<![a-z])jdex(?![a-z])", re.IGNORECASE)  # "JDex.md", "00.00 JDex.md", not "KGbvjdExIi"
+INDEX_FOLDER_RE = re.compile(r"^\d{2}\.00(?:\s|$)")  # "13.00 JDex": a category's index folder
+
+
+def is_jdex_note(rel: str) -> bool:
+    """*rel* is part of a Johnny.Decimal index: a file named JDex, or anything in an ``NN.00`` folder.
+
+    These describe a tree; they are never filed somewhere else. The source of
+    a run may be a Johnny.Decimal tree of its own, with its own index.
+    """
+    parts = posix_rel(rel).split("/")
+    return bool(JDEX_NAME_RE.search(parts[-1])) or any(INDEX_FOLDER_RE.match(p) for p in parts[:-1])
+
+
 def is_software_tree(path: Path) -> bool:
     """*path* is an unpacked software image: an extracted AppImage or a copied Unix root.
 

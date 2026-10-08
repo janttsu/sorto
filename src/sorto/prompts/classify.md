@@ -36,6 +36,7 @@ Rules:
 - confidence is 0.0-1.0. Below 0.5 the file stays in the source for a human to look at, so be honest.
 - needs_user = true only when a human must decide (for example, a file that could belong to two people, or sensitive material with no clear home). Answering "new" is not a reason for it: sorto creates the ID.
 - Never suggest deleting, overwriting, unpacking or editing files.
+- A file named JDex (JDex.md, 00.00 JDex.md) or kept in an NN.00 folder is the index of a Johnny.Decimal tree, not a document or a template: it is never filed anywhere else. If you are shown one, answer needs_user true and say so in reason.
 
 Examples (an invented archive; only the fields that matter are shown):
 Outline: 13 Money: 13.01 Inbox, 13.11 Bank statements, 13.13 Invoices — all bills and receipts. 15 Travel: 15.01 Inbox, 15.41 All short trips [subfolders: 2023-05 Rome], 15.42 Long trips. 31 Making: 31.12 Models — 3D models to print [subfolders: Desk organiser].

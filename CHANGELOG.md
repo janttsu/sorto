@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- JDex notes are never moved: a file named JDex or anything in an `NN.00`
+  folder of the source is skipped by the scan, never shown to the model,
+  listed at the end of the run, and refused right before any move. Before,
+  a source that was a Johnny.Decimal tree of its own could have its index
+  filed away as a document.
 - `sorto fsck` reports what does not belong in a JDex folder: a second note
   (each described, with how much of it is out of date and what both list; a
   clearly out-of-date older one is called a leftover and gets no proposed
