@@ -119,6 +119,9 @@ def check(target: Path, insights: Any = None) -> Report:
     folder_wrong = dict(getattr(insights, "folder_name_wrong", {}) or {})
     report.problems += _structure_problems(root)
     notes = _notes(root, index)
+    folder_problems, leftovers = _jdex_folder_problems(root, index, notes)
+    report.problems += folder_problems
+    notes = {p: t for p, t in notes.items() if p not in leftovers}  # not polished before the user decides
     listed: dict[str, set[str]] = {}  # category -> IDs its own notes list
     for path, text in notes.items():
         cat = note_category(path)
@@ -176,6 +179,87 @@ def _notes(root: Path, index: JDIndex) -> dict[Path, str]:
         except OSError:
             continue
     return notes
+
+
+LEFTOVER_SHARE = 0.25  # this much of a note's entries out of date (and at least LEFTOVER_MIN) ...
+LEFTOVER_MIN = 3  # ... and an older sibling note in the same folder: a leftover from an earlier index
+
+
+def _jdex_folder_problems(root: Path, index: JDIndex, notes: dict[Path, str]) -> tuple[list[str], set[Path]]:
+    """What should not be in a category's JDex folder: a second note, and anything that is not a note.
+
+    A JDex folder holds the category's own note. Several notes in one folder
+    usually mean an older index was left behind next to the current one; each
+    is described (heading, date, entries, how many are out of date, overlap),
+    and one that is clearly out of date and older than its sibling is called a
+    leftover and gets no proposed changes until the user has decided which
+    note the folder keeps. Files and folders that are not notes belong in an
+    ID. Nothing is moved or deleted: these are reported only.
+    """
+    problems: list[str] = []
+    leftovers: set[Path] = set()
+    for item in sorted(index.items.values(), key=lambda i: i.id):
+        if not item.is_index:
+            continue
+        folder = root / item.rel
+        try:
+            with os.scandir(folder) as it:
+                found = sorted((e for e in it if not e.name.startswith(".")), key=lambda e: e.name.lower())
+        except OSError:
+            continue
+        md = [Path(e.path) for e in found if e.is_file(follow_symlinks=False) and e.name.lower().endswith(".md")]
+        others = [e.name + ("/" if e.is_dir(follow_symlinks=False) else "") for e in found if Path(e.path) not in md]
+        if others:
+            problems.append(
+                f"{item.rel}: {len(others)} thing(s) that are not notes: {', '.join(others[:8])}"
+                + (", …" if len(others) > 8 else "")
+                + "; a JDex folder holds the category's notes, files belong in an ID (move them yourself)"
+            )
+        if len(md) < 2:
+            continue
+        facts, stale, ids = [], {}, {}
+        for path in md:
+            text = notes.get(path, "")
+            entries = _entries(text)
+            gone = sum(e.jd_id not in index.items for e in entries)
+            renamed = sum(
+                e.jd_id in index.items and bool(e.name) and len(e.name.split()) <= 6
+                and not _same_name(e.name, index.items[e.jd_id].name)
+                for e in entries
+            )
+            ids[path] = {e.jd_id for e in entries}
+            heading = next((ln.lstrip("# ").strip() for ln in text.splitlines() if ln.startswith("#")), "")
+            try:
+                st = path.stat()
+                when, size = datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d"), st.st_size
+            except OSError:
+                when, size = "?", 0
+            generated = bool(GENERATED_RE.search("\n".join(text.splitlines()[:15])))
+            out_of_date = gone + renamed
+            if entries and out_of_date >= LEFTOVER_MIN and out_of_date / len(entries) >= LEFTOVER_SHARE:
+                stale[path] = st.st_mtime if when != "?" else 0.0
+            facts.append(
+                f"{path.name} (\"{heading[:60]}\", {when}, {size / 1000:.1f} kB"
+                + (", generated" if generated else "")
+                + f", {len(entries)} entries, {gone} for IDs no longer on disk, {renamed} with another name)"
+            )
+        newest = max(md, key=lambda p: p.stat().st_mtime if p.exists() else 0.0)
+        for path in stale:
+            if path != newest and len(stale) < len(md):
+                leftovers.add(path)
+        a, b = md[0], md[1]
+        both = len(ids[a] & ids[b]) if len(md) == 2 else None
+        text = f"{item.rel}: {len(md)} notes in one JDex folder: {'; '.join(facts)}"
+        if both is not None:
+            text += f"; {both} IDs are listed in both"
+        if leftovers & set(md):
+            names = ", ".join(p.name for p in md if p in leftovers)
+            text += (f". {names} looks like a leftover from an earlier index (older, much of it out of date): it gets "
+                     "no proposed changes; keep one note and move the other out yourself")
+        else:
+            text += ". Keep one note per JDex folder, or say in each what it is for"
+        problems.append(text)
+    return problems, leftovers
 
 
 def _entries(text: str):

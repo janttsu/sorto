@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import os
 from pathlib import Path
 
 import pytest
@@ -232,3 +233,50 @@ def test_a_run_says_when_the_notes_and_folders_disagree(inbox: Path, target: Pat
     engine.run_until_idle(timeout=30)
     text = engine.run_log.path.read_text(encoding="utf-8")
     assert "JDex: JDex notes and folders disagree: " in text and f"sorto fsck {target} shows them" in text
+
+
+OLD_MONEY_NOTE = """\
+# 13.00 JDex — the old drive's money index
+
+- 13.11 Bank
+- 13.15 Pension
+- 13.16 Savings account
+- 13.17 Shares
+- 13.12 Tax returns
+"""
+
+
+def test_a_second_out_of_date_note_is_a_leftover_and_gets_no_changes(tree: Path) -> None:
+    old = tree / MONEY / "13.00 JDex" / "Old index.md"
+    old.write_text(OLD_MONEY_NOTE, encoding="utf-8")
+    os.utime(old, (1_600_000_000, 1_600_000_000))  # older than the current note
+    report = check(tree)
+    (problem,) = [p for p in report.problems if "notes in one JDex folder" in p]
+    assert problem.startswith(f"{MONEY}/13.00 JDex: 2 notes in one JDex folder: ")
+    assert "JDex.md (\"13.00 JDex — 13 Money\"" in problem
+    assert "Old index.md (\"13.00 JDex — the old drive's money index\", 2020-09-13" in problem
+    assert "5 entries, 3 for IDs no longer on disk, 1 with another name" in problem
+    assert "2 IDs are listed in both" in problem
+    assert "Old index.md looks like a leftover from an earlier index" in problem
+    assert not any(c.rel.endswith("Old index.md") for c in report.changes)
+    assert any(c.rel.endswith("13.00 JDex/JDex.md") for c in report.changes)  # the current note still is
+
+
+def test_two_up_to_date_notes_are_reported_but_neither_is_called_a_leftover(tree: Path) -> None:
+    (tree / MONEY / "13.00 JDex" / "Notes.md").write_text("# Notes\n\n- 13.13 Invoices — paid bills\n", encoding="utf-8")
+    report = check(tree)
+    (problem,) = [p for p in report.problems if "notes in one JDex folder" in p]
+    assert "leftover" not in problem and problem.endswith("Keep one note per JDex folder, or say in each what it is for")
+    assert any(c.rel.endswith("13.00 JDex/JDex.md") for c in report.changes)
+
+
+def test_files_and_folders_that_are_not_notes_are_reported(tree: Path) -> None:
+    folder = tree / MONEY / "13.00 JDex"
+    (folder / "statement-march.pdf").write_bytes(b"%PDF")
+    (folder / "scans").mkdir()
+    (folder / ".DS_Store").write_bytes(b"\0")  # hidden: not reported
+    before = sorted(p.name for p in folder.iterdir())
+    problems = check(tree).problems
+    assert (f"{MONEY}/13.00 JDex: 2 thing(s) that are not notes: scans/, statement-march.pdf; a JDex folder holds "
+            "the category's notes, files belong in an ID (move them yourself)") in problems
+    assert sorted(p.name for p in folder.iterdir()) == before  # nothing moved

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- `sorto fsck` reports what does not belong in a JDex folder: a second note
+  (each described, with how much of it is out of date and what both list; a
+  clearly out-of-date older one is called a leftover and gets no proposed
+  changes) and files or folders that are not notes. Nothing is moved.
 - `--model NAME` (also `--llm-model`) for `run`, `resume` and `fsck`. Without
   it the TUI asks at the start which local model to use, listing every model
   the server has with its size and marking the default and the one in memory.
