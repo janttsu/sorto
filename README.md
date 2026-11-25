@@ -77,7 +77,14 @@ export VARSTO_MCP_KEY=vmk_...                                   # the key, from 
 sorto varsto check                                              # the folders this key may use
 ```
 
-The key stays in your environment; sorto does not store or print it. `sorto varsto check` only connects and lists the folders with their access (`ro`, `analyse` or `rw`). The sorting itself with Varsto is in progress.
+The key stays in your environment; sorto does not store or print it. `sorto varsto check` only connects and lists the folders with their access (`ro`, `analyse` or `rw`).
+
+```sh
+sorto varsto sort archive --dry-run   # which files would be analysed; no model, no changes
+sorto varsto sort archive             # analyse, file and index the folder
+```
+
+`sort` reads each file that has a plain copy on this device and no current analysis, asks the local model for a Johnny.Decimal ID, records the analysis in Varsto, moves the file to its ID inside the same folder, and keeps `JDex.md` up to date. Varsto never replaces a file (a clash gets a new name), keeps the previous version of a file it replaces, and removes only empty folders. Files kept as placeholders are skipped and listed.
 
 ## Good to know
 

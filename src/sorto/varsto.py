@@ -178,12 +178,15 @@ class VarstoMcp:
         return list(self.call("varsto_folders"))
 
     def files(self, folder: str, *, with_analysis: bool = True) -> list[dict[str, Any]]:
-        return list(
-            self.call("varsto_files", {"folder": folder, "with_analysis": with_analysis})
-        )
+        return list(self.call("varsto_files", {"folder": folder, "with_analysis": with_analysis}))
 
     def set_analysis(
-        self, folder: str, path: str, analysis: str, tags: list[str] | None = None, by: str | None = None
+        self,
+        folder: str,
+        path: str,
+        analysis: str,
+        tags: list[str] | None = None,
+        by: str | None = None,
     ) -> Any:
         args: dict[str, Any] = {"folder": folder, "path": path, "analysis": analysis}
         if tags:

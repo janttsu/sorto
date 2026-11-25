@@ -50,7 +50,9 @@ def test_missing_binary_is_a_clear_error() -> None:
         VarstoMcp(["no-such-varsto-binary-xyz"]).start()
 
 
-def test_check_command_lists_folders_without_secrets(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
+def test_check_command_lists_folders_without_secrets(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
     from sorto import varsto as module
     from sorto.cli import main
 

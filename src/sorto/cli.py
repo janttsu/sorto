@@ -40,11 +40,22 @@ def _add_roots(p: argparse.ArgumentParser, *, required: bool = True) -> None:
 
 
 def _add_run_opts(p: argparse.ArgumentParser) -> None:
-    p.add_argument("--dry-run", action="store_true", help="Analyze and show planned moves; do not move")
+    p.add_argument(
+        "--dry-run", action="store_true", help="Analyze and show planned moves; do not move"
+    )
     p.add_argument("--suggest-only", action="store_true", help="Same as --dry-run")
-    p.add_argument("--confirm", action="store_true", help="Ask before each move (Enter/y = move, n = keep)")
-    p.add_argument("--yes", action="store_true", help="Also move files the model flagged needs_user")
-    p.add_argument("--min-confidence", type=float, default=None, help="Below this, keep in source (default 0.5)")
+    p.add_argument(
+        "--confirm", action="store_true", help="Ask before each move (Enter/y = move, n = keep)"
+    )
+    p.add_argument(
+        "--yes", action="store_true", help="Also move files the model flagged needs_user"
+    )
+    p.add_argument(
+        "--min-confidence",
+        type=float,
+        default=None,
+        help="Below this, keep in source (default 0.5)",
+    )
     p.add_argument(
         "--clear-cache",
         action="store_true",
@@ -112,15 +123,33 @@ def _add_run_opts(p: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Delete cache/temp/thumbnail junk instead of leaving it. Never inside a git repository.",
     )
-    p.add_argument("--scan-interval", type=float, default=None, metavar="SEC", help="Rescan interval (default 5)")
+    p.add_argument(
+        "--scan-interval",
+        type=float,
+        default=None,
+        metavar="SEC",
+        help="Rescan interval (default 5)",
+    )
     p.add_argument("--once", action="store_true", help="Process current files, then exit")
     p.add_argument("--follow", action="store_true", help="Keep watching the source (default)")
-    p.add_argument("--include", action="append", default=[], metavar="GLOB", help="Repeatable include glob")
-    p.add_argument("--exclude", action="append", default=[], metavar="GLOB", help="Repeatable exclude glob")
-    p.add_argument("--max-file-mb", type=int, default=None, help="Metadata only above this size (default 64)")
-    p.add_argument("--llm-url", default=None, help="Local OpenAI-compatible base URL (loopback only)")
     p.add_argument(
-        "--model", "--llm-model", dest="llm_model", default=None, metavar="NAME",
+        "--include", action="append", default=[], metavar="GLOB", help="Repeatable include glob"
+    )
+    p.add_argument(
+        "--exclude", action="append", default=[], metavar="GLOB", help="Repeatable exclude glob"
+    )
+    p.add_argument(
+        "--max-file-mb", type=int, default=None, help="Metadata only above this size (default 64)"
+    )
+    p.add_argument(
+        "--llm-url", default=None, help="Local OpenAI-compatible base URL (loopback only)"
+    )
+    p.add_argument(
+        "--model",
+        "--llm-model",
+        dest="llm_model",
+        default=None,
+        metavar="NAME",
         help="Local model that reads the files; without it the TUI asks, listing every model the server has",
     )
     p.add_argument("--log-level", default=None, help="DEBUG/INFO/WARNING/ERROR")
@@ -154,12 +183,20 @@ def build_parser() -> argparse.ArgumentParser:
     _add_roots(p_status)
     p_status.set_defaults(func=cmd_status)
 
-    p_init = sub.add_parser("init", help="Create a Johnny.Decimal structure for TARGET that fits the files")
+    p_init = sub.add_parser(
+        "init", help="Create a Johnny.Decimal structure for TARGET that fits the files"
+    )
     p_init.add_argument("target", type=Path, help="Where to create it")
-    p_init.add_argument("source", type=Path, nargs="?", help="Files to design it for (default: TARGET itself)")
+    p_init.add_argument(
+        "source", type=Path, nargs="?", help="Files to design it for (default: TARGET itself)"
+    )
     p_init.add_argument("--accept-structure", action="store_true", help="Create it without asking")
     p_init.add_argument(
-        "--from", dest="from_file", type=Path, default=None, metavar="FILE",
+        "--from",
+        dest="from_file",
+        type=Path,
+        default=None,
+        metavar="FILE",
         help="Create the structure written in FILE (e.g. an edited proposal) instead of asking the model",
     )
     p_init.add_argument("--dry-run", action="store_true", help="Only show the proposal")
@@ -168,7 +205,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_init.add_argument("--fake-llm", action="store_true", help=argparse.SUPPRESS)
     p_init.set_defaults(func=cmd_init)
 
-    p_index = sub.add_parser("index", help="Show the Johnny.Decimal outline sorto reads from TARGET")
+    p_index = sub.add_parser(
+        "index", help="Show the Johnny.Decimal outline sorto reads from TARGET"
+    )
     p_index.add_argument("target", type=Path)
     p_index.set_defaults(func=cmd_index)
 
@@ -177,10 +216,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="Check TARGET's Johnny.Decimal structure and JDex notes; propose fixes to accept file by file",
     )
     p_fsck.add_argument("target", type=Path)
-    p_fsck.add_argument("--yes", action="store_true", help="Write every proposed change without asking")
-    p_fsck.add_argument("--no-tui", action="store_true", help="Ask about each change as plain text instead of the TUI")
     p_fsck.add_argument(
-        "--model", "--llm-model", dest="llm_model", default=None, metavar="NAME",
+        "--yes", action="store_true", help="Write every proposed change without asking"
+    )
+    p_fsck.add_argument(
+        "--no-tui",
+        action="store_true",
+        help="Ask about each change as plain text instead of the TUI",
+    )
+    p_fsck.add_argument(
+        "--model",
+        "--llm-model",
+        dest="llm_model",
+        default=None,
+        metavar="NAME",
         help="Local model that reviews the tree (default: structure_model); without it the TUI asks",
     )
     p_fsck.set_defaults(func=cmd_fsck)
@@ -190,14 +239,22 @@ def build_parser() -> argparse.ArgumentParser:
     p_doctor.add_argument("--llm-url", default=None)
     p_doctor.add_argument("--llm-model", default=None)
     p_doctor.add_argument(
-        "--no-warm", action="store_true", help="Do not load the configured models (faster, but unchecked)"
+        "--no-warm",
+        action="store_true",
+        help="Do not load the configured models (faster, but unchecked)",
     )
     p_doctor.set_defaults(func=cmd_doctor)
 
     p_rules = sub.add_parser("rules", help="Show (and create) your free-form sorting rules file")
-    p_rules.add_argument("target", type=Path, nargs="?", help="Check the IDs the rules mention against this tree")
-    p_rules.add_argument("--rules", type=Path, default=None, metavar="FILE", help="Rules file to show")
-    p_rules.add_argument("--junk-rules", type=Path, default=None, metavar="FILE", help="Junk patterns file to show")
+    p_rules.add_argument(
+        "target", type=Path, nargs="?", help="Check the IDs the rules mention against this tree"
+    )
+    p_rules.add_argument(
+        "--rules", type=Path, default=None, metavar="FILE", help="Rules file to show"
+    )
+    p_rules.add_argument(
+        "--junk-rules", type=Path, default=None, metavar="FILE", help="Junk patterns file to show"
+    )
     p_rules.set_defaults(func=cmd_rules)
 
     p_varsto = sub.add_parser(
@@ -205,13 +262,35 @@ def build_parser() -> argparse.ArgumentParser:
         help="Work with a Varsto vault through its MCP server (the key is VARSTO_MCP_KEY)",
     )
     varsto_sub = p_varsto.add_subparsers(dest="varsto_cmd", required=True)
+    p_vsort = varsto_sub.add_parser(
+        "sort", help="Analyse, file and index a Varsto folder (needs a read-write grant)"
+    )
+    p_vsort.add_argument("folder", help="The Varsto folder to sort")
+    p_vsort.add_argument(
+        "--varsto-bin", default="varsto", help="The varsto program (default: varsto on PATH)"
+    )
+    p_vsort.add_argument(
+        "--dry-run", action="store_true", help="List what would be analysed; no model, no changes"
+    )
+    p_vsort.add_argument(
+        "--model",
+        "--llm-model",
+        dest="llm_model",
+        default=None,
+        metavar="NAME",
+        help="The local model that reads the files (default: from your config)",
+    )
+    p_vsort.add_argument("--fake-llm", action="store_true", help=argparse.SUPPRESS)
+    p_vsort.set_defaults(func=cmd_varsto_sort)
     p_vcheck = varsto_sub.add_parser("check", help="Connect and list the folders this key may use")
     p_vcheck.add_argument(
         "--varsto-bin", default="varsto", help="The varsto program (default: varsto on PATH)"
     )
     p_vcheck.set_defaults(func=cmd_varsto_check)
 
-    p_cfg = sub.add_parser("config", help="Show merged configuration (creates the user config if missing)")
+    p_cfg = sub.add_parser(
+        "config", help="Show merged configuration (creates the user config if missing)"
+    )
     _add_roots(p_cfg, required=False)
     p_cfg.set_defaults(func=cmd_config)
 
@@ -228,7 +307,9 @@ def _roots(args: argparse.Namespace) -> tuple[Path, Path]:
     return source, target
 
 
-def bootstrap_structure(cfg: SortoConfig, llm: object, progress: object, args: argparse.Namespace) -> bool:
+def bootstrap_structure(
+    cfg: SortoConfig, llm: object, progress: object, args: argparse.Namespace
+) -> bool:
     """TARGET has no Johnny.Decimal structure: propose one, show it, create it if accepted."""
     from sorto.bootstrap import PROPOSAL_HEADER, create, normalize, parse_tree, survey, survey_text
     from sorto.llm import LLMError
@@ -252,7 +333,10 @@ def bootstrap_structure(cfg: SortoConfig, llm: object, progress: object, args: a
             print("There are no files to organize.", file=sys.stderr)
             return False
         text = survey_text(stats, total, cfg.source.name)
-        print(f"{total:,} files. Asking the local model for a structure (this can take a minute) …", flush=True)
+        print(
+            f"{total:,} files. Asking the local model for a structure (this can take a minute) …",
+            flush=True,
+        )
         try:
             structure = normalize(propose(text, load_rules(cfg.rules_file).text))
         except LLMError as e:
@@ -271,7 +355,9 @@ def bootstrap_structure(cfg: SortoConfig, llm: object, progress: object, args: a
     if not from_file:
         saved.parent.mkdir(parents=True, exist_ok=True)
         saved.write_text(PROPOSAL_HEADER + structure.render() + "\n", encoding="utf-8")
-        print(f"To change names or IDs first: edit {saved}\nand run: sorto init {cfg.target} --from {saved}")
+        print(
+            f"To change names or IDs first: edit {saved}\nand run: sorto init {cfg.target} --from {saved}"
+        )
     if cfg.dry_run:
         print("Dry run: nothing created.")
         raise SystemExit(0)
@@ -327,7 +413,17 @@ def cmd_status(args: argparse.Namespace) -> int:
         runs = sorted(cfg.runs_dir.glob("run-*.log"))
         if runs:
             print(f"last log: {runs[-1]}  ({len(runs)} run log(s) in {cfg.runs_dir})")
-        for name in ("total", "discovered", "planned", "done", "skipped", "needs_user", "error", "gone", "pending"):
+        for name in (
+            "total",
+            "discovered",
+            "planned",
+            "done",
+            "skipped",
+            "needs_user",
+            "error",
+            "gone",
+            "pending",
+        ):
             print(f"{name + ':':<12}{getattr(c, name)}")
     finally:
         db.close()
@@ -356,10 +452,14 @@ def cmd_fsck(args: argparse.Namespace) -> int:
 
         target = Path(args.target).expanduser().resolve()
         llm = structure_llm(target)
-        model = pick_model(llm, default=str(getattr(llm, "model", "")), purpose=(
-            "Which model should review the Johnny.Decimal tree? It reads every category and thinks about the "
-            "whole structure before anything is proposed; a big model gives the best review."
-        ))
+        model = pick_model(
+            llm,
+            default=str(getattr(llm, "model", "")),
+            purpose=(
+                "Which model should review the Johnny.Decimal tree? It reads every category and thinks about the "
+                "whole structure before anything is proposed; a big model gives the best review."
+            ),
+        )
         if model is None:
             print("no model chosen; nothing was done")
             return 0
@@ -381,10 +481,14 @@ def _ask_model(args: argparse.Namespace) -> bool:
     except NotLocalError as e:
         raise SystemExit(f"error: {e}") from e
     structure = cfg.structure_model or cfg.llm_model
-    chosen = pick_model(llm, default=cfg.llm_model, purpose=(
-        f"Which model should read and sort the files? New IDs and categories are still decided by {structure} "
-        "(structure_model). Big models are more accurate, small ones faster."
-    ))
+    chosen = pick_model(
+        llm,
+        default=cfg.llm_model,
+        purpose=(
+            f"Which model should read and sort the files? New IDs and categories are still decided by {structure} "
+            "(structure_model). Big models are more accurate, small ones faster."
+        ),
+    )
     if chosen is None:
         return False
     args.llm_model = chosen
@@ -395,7 +499,11 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     if (args.source is None) != (args.target is None):
         raise SystemExit("error: give both SOURCE and --target, or neither")
     checks = run_doctor(
-        args.source, args.target, llm_url=args.llm_url, llm_model=args.llm_model, warm=not args.no_warm
+        args.source,
+        args.target,
+        llm_url=args.llm_url,
+        llm_model=args.llm_model,
+        warm=not args.no_warm,
     )
     print(format_report(checks))
     return 0 if all(c.ok or c.name.startswith("bin:") for c in checks) else 1
@@ -409,9 +517,13 @@ def cmd_rules(args: argparse.Namespace) -> int:
     rules = load_rules(path)
     print(f"rules file: {path}")
     if not rules:
-        print("(no rules yet: add plain-language lines below the comment; the template has examples)")
+        print(
+            "(no rules yet: add plain-language lines below the comment; the template has examples)"
+        )
     else:
-        print(f"{rules.line_count} rule line(s){' (truncated to fit the prompt)' if rules.truncated else ''}:\n")
+        print(
+            f"{rules.line_count} rule line(s){' (truncated to fit the prompt)' if rules.truncated else ''}:\n"
+        )
         print(rules.text)
     junk = load_junk_rules(ensure_junk_file(args.junk_rules))
     print(f"\njunk file:  {junk.path}")
@@ -419,8 +531,10 @@ def cmd_rules(args: argparse.Namespace) -> int:
         print("(no junk patterns yet: 'into: NN.NN' and then one pattern per line, e.g. *.dll)")
     else:
         where = f" → {junk.into}" if junk.into else ""
-        print(f"{len(junk.rules)} pattern(s){where}: " + ", ".join(
-            r.pattern + (f" → {r.jd_id}" if r.jd_id else "") for r in junk.rules))
+        print(
+            f"{len(junk.rules)} pattern(s){where}: "
+            + ", ".join(r.pattern + (f" → {r.jd_id}" if r.jd_id else "") for r in junk.rules)
+        )
     for problem in junk.problems:
         print(f"warning: junk file: {problem}")
     status = 1 if junk.problems else 0
@@ -462,9 +576,14 @@ def _build_engine(args: argparse.Namespace, *, retry_errors: bool) -> tuple[Sort
     if health is not None and not getattr(args, "fake_llm", False):
         ok, detail = health()
         if not ok and "not pulled" in detail:
-            raise SystemExit(f"error: model {cfg.llm_model!r} is not available at {cfg.llm_url}: {detail}")
+            raise SystemExit(
+                f"error: model {cfg.llm_model!r} is not available at {cfg.llm_url}: {detail}"
+            )
         if not ok:
-            print(f"warning: local model not reachable yet ({detail}); sorto keeps retrying", file=sys.stderr)
+            print(
+                f"warning: local model not reachable yet ({detail}); sorto keeps retrying",
+                file=sys.stderr,
+            )
     _fit_context(cfg, llm)
     engine = Engine(cfg, llm=llm)
     if not len(engine.index) and bootstrap_structure(cfg, llm, engine.progress, args):
@@ -486,7 +605,10 @@ def _headless_loop(engine: Engine) -> int:
     if engine.cfg.reorganize:
         where = engine.cfg.target / engine.cfg.reorganize_scope
         print(f"reorganizing {where} in place (depth {engine.cfg.reorganize_depth})", flush=True)
-    print(f"index: {engine.cfg.db_path} (remembers processed files; delete it to start over)", flush=True)
+    print(
+        f"index: {engine.cfg.db_path} (remembers processed files; delete it to start over)",
+        flush=True,
+    )
     engine.start()
     if engine.run_log is not None:
         print(f"log of this run: {engine.run_log.path}", flush=True)
@@ -569,6 +691,43 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 def cmd_resume(args: argparse.Namespace) -> int:
     return _run(args, retry_errors=True)
+
+
+def cmd_varsto_sort(args: argparse.Namespace) -> int:
+    """Sort one Varsto folder through its MCP server; prints what was done."""
+    from sorto.varsto import VarstoError, VarstoMcp
+    from sorto.varsto_sort import folder_root, sort_folder
+
+    try:
+        with VarstoMcp([args.varsto_bin, "mcp"]) as v:
+            root = folder_root(v, args.folder, write=not args.dry_run)
+            cfg = load_config(root, root, cli=args)
+            llm = None if args.dry_run else make_llm(cfg, fake=bool(args.fake_llm))
+            report = sort_folder(
+                v,
+                args.folder,
+                cfg,
+                llm,
+                dry_run=args.dry_run,
+                model_name=cfg.llm_model,
+                progress=lambda m: print(m),
+            )
+    except VarstoError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    for s in report.steps:
+        arrow = f" -> {s.dest}" if s.dest else ""
+        print(f"{s.action:15} {s.path}{arrow}" + (f"  ({s.detail})" if s.detail else ""))
+    if args.dry_run:
+        print(f"dry run: {len(report.steps)} file(s) would be analysed; nothing was changed")
+        return 0
+    print(
+        f"moved {report.count('moved')}, filed in place {report.count('filed-in-place')}, "
+        f"skipped {report.count('skipped')}, failed {report.count('failed')}; "
+        f"removed folders {len(report.removed_dirs)}; index {report.index_path}"
+        f"{' updated' if report.index_written else ' unchanged'}"
+    )
+    return 0
 
 
 def cmd_varsto_check(args: argparse.Namespace) -> int:

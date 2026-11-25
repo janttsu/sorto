@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `sorto varsto sort FOLDER [--dry-run] [--model NAME]`: analyses, files and indexes a Varsto folder through its MCP server (moves inside the folder, analyses recorded in Varsto, `JDex.md` kept up to date). Nothing is overwritten or deleted except empty folders.
 - `sorto varsto check`: connects to a Varsto vault through `varsto mcp` (key in `VARSTO_MCP_KEY`) and lists the folders the key may use. A small MCP client (`sorto.varsto`) that the sorting will use to record analyses and file folders in Varsto.
 - `--model NAME` (also `--llm-model`) for `run`, `resume` and `fsck`. Without
   it the TUI asks at the start which local model to use, listing every model
