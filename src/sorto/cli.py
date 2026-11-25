@@ -200,6 +200,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_rules.add_argument("--junk-rules", type=Path, default=None, metavar="FILE", help="Junk patterns file to show")
     p_rules.set_defaults(func=cmd_rules)
 
+    p_varsto = sub.add_parser(
+        "varsto",
+        help="Work with a Varsto vault through its MCP server (the key is VARSTO_MCP_KEY)",
+    )
+    varsto_sub = p_varsto.add_subparsers(dest="varsto_cmd", required=True)
+    p_vcheck = varsto_sub.add_parser("check", help="Connect and list the folders this key may use")
+    p_vcheck.add_argument(
+        "--varsto-bin", default="varsto", help="The varsto program (default: varsto on PATH)"
+    )
+    p_vcheck.set_defaults(func=cmd_varsto_check)
+
     p_cfg = sub.add_parser("config", help="Show merged configuration (creates the user config if missing)")
     _add_roots(p_cfg, required=False)
     p_cfg.set_defaults(func=cmd_config)
@@ -558,6 +569,26 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 def cmd_resume(args: argparse.Namespace) -> int:
     return _run(args, retry_errors=True)
+
+
+def cmd_varsto_check(args: argparse.Namespace) -> int:
+    """Print the server, the folders this key may see, and their access level."""
+    from sorto.varsto import VarstoError, VarstoMcp
+
+    try:
+        with VarstoMcp([args.varsto_bin, "mcp"]) as v:
+            folders = v.folders()
+            server = v.server_info
+    except VarstoError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    print(f"connected to {server.get('name', 'varsto')} {server.get('version', '')}".rstrip())
+    if not folders:
+        print("no folders are granted to this key (varsto mcp grant <folder> --write)")
+        return 0
+    for f in folders:
+        print(f"  {f.get('name')}: {f.get('access')}")
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:

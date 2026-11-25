@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `sorto varsto check`: connects to a Varsto vault through `varsto mcp` (key in `VARSTO_MCP_KEY`) and lists the folders the key may use. A small MCP client (`sorto.varsto`) that the sorting will use to record analyses and file folders in Varsto.
 - `--model NAME` (also `--llm-model`) for `run`, `resume` and `fsck`. Without
   it the TUI asks at the start which local model to use, listing every model
   the server has with its size and marking the default and the one in memory.

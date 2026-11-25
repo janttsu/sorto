@@ -67,6 +67,18 @@ Thumbs.db
 *.log -> 00.13
 ```
 
+## With Varsto
+
+[Varsto](https://github.com/janttsu/varsto) keeps your files encrypted across your own storages and devices. It offers them to a local assistant through the Model Context Protocol (MCP), and sorto is such an assistant: it reads a Varsto folder through `varsto mcp`, records what each file contains, and files the folder into your Johnny.Decimal structure. Varsto applies every change and refuses what the key may not do; a replaced file keeps its previous version in Varsto's history.
+
+```sh
+varsto mcp key create --name sorto --folders archive --write   # in Varsto, once
+export VARSTO_MCP_KEY=vmk_...                                   # the key, from that command
+sorto varsto check                                              # the folders this key may use
+```
+
+The key stays in your environment; sorto does not store or print it. `sorto varsto check` only connects and lists the folders with their access (`ro`, `analyse` or `rw`). The sorting itself with Varsto is in progress.
+
 ## Good to know
 
 - **Git repositories are never touched.** Nothing is moved out of, around in, or into a repository (bare ones included). This is built in; no rule or setting changes it. Unpacked software (an extracted AppImage, a copied Unix root) is kept whole the same way.
