@@ -1,8 +1,10 @@
 """A stand-in for `varsto mcp` on a plain folder, with invented data.
 
-Usage: fake_varsto_sort.py ROOT FOLDER ACCESS [PLACEHOLDER_PATH ...]
+Usage: fake_varsto_sort.py ROOT FOLDER ACCESS [PLACEHOLDER_PATH | stale:PATH ...]
 Works on the real files under ROOT: moves never replace, rmdir only removes
-an empty folder, and writes need an rw access level (as in Varsto).
+an empty folder, writes need an rw access level, and an analysis that exists
+is kept, never replaced (as in Varsto). `stale:PATH` starts PATH with an
+analysis of an earlier version of the file.
 """
 
 import json
@@ -10,8 +12,9 @@ import os
 import sys
 
 ROOT, FOLDER, ACCESS = sys.argv[1], sys.argv[2], sys.argv[3]
-PLACEHOLDERS = set(sys.argv[4:])
-ANALYSES = {}
+STALE = {a[len("stale:") :] for a in sys.argv[4:] if a.startswith("stale:")}
+PLACEHOLDERS = {a for a in sys.argv[4:] if not a.startswith("stale:")}
+ANALYSES = {p: {"analysis": "an earlier version", "tags": []} for p in STALE}
 
 
 def files():
@@ -51,6 +54,7 @@ def call(name, args):
                 "state": "placeholder" if p in PLACEHOLDERS else "local",
                 "local_path": None if p in PLACEHOLDERS else os.path.join(ROOT, p),
                 "analysis": ANALYSES.get(p),
+                "analysis_stale": p in STALE,
             }
             for p in files()
         ]
@@ -58,6 +62,11 @@ def call(name, args):
     if name == "varsto_set_analysis":
         if args.get("analysis") == "refuse":
             return refused("analysis refused by the test")
+        if args["path"] in ANALYSES:
+            return refused(
+                f"{args['path']} already has an analysis; it is kept "
+                "(the user can clear it in the interface first)"
+            )
         ANALYSES[args["path"]] = {"analysis": args["analysis"], "tags": args.get("tags", [])}
         return ok()
     try:

@@ -116,9 +116,12 @@ def sort_folder(
         raise VarstoError(f"no Johnny.Decimal IDs in {folder}: nothing to file into")
     files = client.files(folder)
     prompt = _prompt(cfg, index)
+    report.index_path = _index_rel(root)
     emptied: set[str] = set()
     for f in files:
         rel = f.get("path", "")
+        if rel == report.index_path:
+            continue  # sorto's own index is not a file to sort
         if not _needs_analysis(f):
             if f.get("state") != "local":
                 report.steps.append(
@@ -145,23 +148,31 @@ def sort_folder(
             continue
         try:
             tags = [t for t in (cls.label, cls.jd_id) if t]
-            client.set_analysis(
-                folder, rel, cls.summary or cls.reason or rel, tags, model_name or None
-            )
+            note = plan.item.id
+            try:
+                client.set_analysis(
+                    folder, rel, cls.summary or cls.reason or rel, tags, model_name or None
+                )
+            except VarstoError:
+                # Varsto keeps an analysis it already has, also one of an
+                # earlier version of the file, until the user clears it. The
+                # file is filed all the same.
+                if not f.get("analysis"):
+                    raise
+                note += "; Varsto kept the earlier analysis"
             if plan.dest_rel == rel:
-                report.steps.append(Step(rel, "filed-in-place", plan.item.id, dest=rel))
+                report.steps.append(Step(rel, "filed-in-place", note, dest=rel))
                 continue
             parent = str(Path(plan.dest_rel).parent)
             if parent not in ("", "."):
                 client.mkdir(folder, parent)
             client.move(folder, rel, plan.dest_rel)
-            report.steps.append(Step(rel, "moved", plan.item.id, dest=plan.dest_rel))
+            report.steps.append(Step(rel, "moved", note, dest=plan.dest_rel))
             old_parent = str(Path(rel).parent)
             if old_parent not in ("", "."):
                 emptied.add(old_parent)
         except VarstoError as e:
             report.steps.append(Step(rel, "failed", str(e)))
-    report.index_path = _index_rel(root)
     text = _index_text(index)
     current = (
         (root / report.index_path).read_text(encoding="utf-8")

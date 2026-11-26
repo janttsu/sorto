@@ -75,6 +75,34 @@ def test_sort_files_invoice_moves_and_index(tmp_path: Path) -> None:
     assert "13.13" in (tmp_path / "JDex.md").read_text(encoding="utf-8")
 
 
+def test_the_index_is_not_a_file_to_sort(tmp_path: Path) -> None:
+    make_folder(tmp_path)
+    with client(tmp_path) as v:
+        sort_folder(v, "archive", cfg_for(tmp_path), llm())
+    assert (tmp_path / "JDex.md").exists()
+    # A second run finds the index sorto wrote: it is neither read by the model nor moved.
+    fake = llm()
+    with client(tmp_path) as v:
+        report = sort_folder(v, "archive", cfg_for(tmp_path), fake)
+    assert all(s.path != "JDex.md" for s in report.steps)
+    assert all("JDex" not in str(c) for c in fake.calls)
+    assert (tmp_path / "JDex.md").exists()
+
+
+def test_a_kept_analysis_does_not_stop_the_filing(tmp_path: Path) -> None:
+    make_folder(tmp_path)
+    invoice = "inbox/2026-07/invoice-example-07.txt"
+    # Varsto holds an analysis of an earlier version and does not replace it.
+    with VarstoMcp(
+        [sys.executable, str(FAKE), str(tmp_path), "archive", "rw", f"stale:{invoice}"], timeout=10
+    ) as v:
+        report = sort_folder(v, "archive", cfg_for(tmp_path), llm())
+    step = next(s for s in report.steps if s.path == invoice)
+    assert step.action == "moved" and "kept the earlier analysis" in step.detail
+    assert report.count("failed") == 0
+    assert (tmp_path / step.dest).exists()
+
+
 def test_placeholder_is_skipped_and_said_so(tmp_path: Path) -> None:
     make_folder(tmp_path)
     with client(tmp_path, placeholders=("inbox/2026-07/trip-notes.txt",)) as v:
